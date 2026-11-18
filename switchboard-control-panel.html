@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Offline Local Model Switchboard — Control Panel</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#0f172a;color:#e2e8f0}
+.wrap{max-width:1080px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:6px 0}h2{font-size:17px;margin:18px 0 8px}h3{font-size:15px}
+.banner{background:#451a03;border:1px solid #f59e0b;border-radius:10px;padding:12px;margin:10px 0;color:#fef3c7}
+.banner b{color:#fff}.card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:14px;margin:10px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:760px){.grid{grid-template-columns:1fr}}
+label{display:block;font-size:13px;margin:8px 0 3px;color:#cbd5e1}
+input,select,textarea{width:100%;padding:8px;border-radius:6px;border:1px solid #475569;background:#0f172a;color:#e2e8f0;font-size:14px}
+textarea{font-family:ui-monospace,Menlo,monospace;min-height:110px}
+button{background:#2563eb;color:#fff;border:0;border-radius:6px;padding:9px 14px;cursor:pointer;margin:4px 4px 4px 0;font-size:14px}
+button.ghost{background:#334155}button.danger{background:#b91c1c}button.ok{background:#15803d}
+button:disabled{opacity:.5}.pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;font-weight:700}
+.healthy{background:#14532d;color:#bbf7d0}.unhealthy{background:#7f1d1d;color:#fecaca}.unknown{background:#334155;color:#e2e8f0}
+.active{background:#1e40af;color:#dbeafe}table{width:100%;border-collapse:collapse;font-size:13px}th,td{border-bottom:1px solid #334155;padding:6px;text-align:left;vertical-align:top}
+code,pre{background:#0f172a;border:1px solid #334155;border-radius:6px;padding:2px 5px}pre{padding:10px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+.mut{color:#94a3b8;font-size:13px}.err{color:#fca5a5}.good{color:#86efac}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tabs button{background:#334155}.tabs button.on{background:#2563eb}
+</style></head><body><div class="wrap">
+<h1>Offline Local Model Switchboard — Control Panel</h1>
+<p class="mut">Go 1 · Cobra 1 · Viper 1 · SQLite 3 (in the real tool) · Gateway <code>127.0.0.1:8080</code> · OpenAI-compatible <code>POST /v1/chat/completions</code></p>
+<div class="banner"><b>Honest limit — read first:</b> the Go command-line binary itself <b>cannot run in a browser</b>, so this page is <b>not</b> the Go binary and <b>not</b> a model. It is a working control panel that implements the switchboard logic in this page: endpoint registration, profile routing, request validation, real forwarding attempts, and local logging. <b>No real local model server is connected unless you supply one.</b> If an endpoint address is not reachable from this browser, the panel reports it as unreachable (HTTP 502) and never invents a model reply. The spec also says the real project has <b>no graphical user interface or web dashboard</b> as a non-goal — this panel exists only as a working demonstration of the logic, not as part of the shipped command-line tool.</div>
+
+<div class="card"><h2>Gateway status</h2>
+<div class="row"><span id="gwState" class="pill unknown">STOPPED</span><span id="gwInfo" class="mut">Gateway not started. Start it, then send a request below.</span></div>
+<p><label>Listen address <input id="listen" value="127.0.0.1:8080"></label></p>
+<button id="startBtn" class="ok">Start gateway (serve)</button><button id="stopBtn" class="ghost">Stop gateway</button>
+<button id="statusBtn">Run status</button><span id="statusOut" class="mut"></span></div>
+
+<div class="grid">
+<div class="card"><h2>1 · Register endpoint</h2>
+<label>Name <input id="epName" placeholder="draft-model"></label>
+<label>Base address <input id="epUrl" placeholder="http://127.0.0.1:11434"></label>
+<label>Model identifier <input id="epModel" placeholder="qwen3-4b"></label>
+<label>Size / role <select id="epSize"><option value="small">small — drafting</option><option value="large">large — review</option></select></label>
+<label>Timeout seconds <input id="epTimeout" type="number" value="30" min="1" max="300"></label>
+<button id="addEp">Register endpoint</button><span id="epMsg" class="mut"></span>
+<p class="mut">Tip: use <code>stub://echo</code> as the address for a clearly labelled local test stub. It returns your request back unchanged — it is <b>not</b> a model. Any other address is probed for real with a fetch; a failed probe means unhealthy, not healthy.</p>
+<h3>Registered endpoints</h3><div id="epList"></div>
+<button id="probeBtn" class="ghost">Probe health now (30-second probe in the real tool)</button></div>
+
+<div class="card"><h2>2 · Routing profiles</h2>
+<p class="mut">Active profile: <b id="activeProfile">drafting</b> — switching takes effect at once, no client change, no gateway restart.</p>
+<div id="profiles"></div>
+<button id="useDraft">Use drafting</button><button id="useReview">Use review</button>
+<p class="mut">drafting → small endpoint · review → large endpoint. If the profile's endpoint is missing or unhealthy, routing is refused with HTTP 503.</p>
+<h3>Profile routing map</h3><pre id="routeMap"></pre></div>
+</div>
+
+<div class="card"><h2>3 · Send a chat request (real validation + real forwarding attempt)</h2>
+<label>Request body — OpenAI-compatible JSON <textarea id="reqBody">{
+  "model": "qwen3-4b",
+  "messages": [{"role": "user", "content": "Write one sentence about a husky."}],
+  "temperature": 0.7
+}</textarea></label>
+<div class="row"><button id="sendBtn">Validate and route request</button><button id="validateBtn" class="ghost">Validate only (no send)</button><span id="reqMsg"></span></div>
+<p class="mut">Phase 7 limits enforced here: body over 10 megabytes → HTTP 413 · missing <code>model</code> or bad JSON → HTTP 400 · no healthy endpoint → HTTP 503 · endpoint unreachable → HTTP 502 · more than 100 requests at once → HTTP 429.</p>
+<pre id="respOut">No request sent yet.</pre></div>
+
+<div class="grid">
+<div class="card"><h2>4 · Local usage log</h2>
+<div class="row"><label style="flex:1">Days <select id="daysSel"><option>1</option><option>7</option><option>30</option><option>90</option></select></label>
+<button id="totalsBtn" class="ghost">Show totals</button><button id="exportBtn" class="ghost">Export log (JSON)</button><button id="clearBtn" class="danger">Clear log</button></div>
+<pre id="totalsOut">No completed requests logged yet.</pre>
+<div style="max-height:260px;overflow:auto"><table><thead><tr><th>Time</th><th>Profile</th><th>Endpoint / model</th><th>Tokens</th><th>ms</th><th>Outcome</th></tr></thead><tbody id="logBody"><tr><td colspan="6" class="mut">No rows yet. Completed requests only — rejected requests write no row.</td></tr></tbody></table></div>
+<p class="mut">In the real tool this log lives in local SQLite 3 only, never sent anywhere. Here it lives in the widget state on this device only.</p></div>
+
+<div class="card"><h2>5 · Command-line simulator — try the real commands</h2>
+<label>Command <input id="cliInput" value="switchboard status"></label>
+<button id="cliRun">Run command</button><span class="mut">Exit code shown with the output.</span>
+<pre id="cliOut">Type a command, for example:
+switchboard --help
+switchboard endpoint list
+switchboard profile use review
+switchboard usage --days 7
+switchboard usage --model qwen3-4b</pre></div>
+</div>
+
+<div class="card"><h2>Command reference — all 9 commands (from contracts/CLI-REFERENCE.md)</h2>
+<table><thead><tr><th>Command</th><th>Flags / arguments</th></tr></thead><tbody>
+<tr><td><code>switchboard serve</code></td><td><code>--listen</code> (default 127.0.0.1:8080), <code>--config</code> (path), <code>--profile</code> (profile at startup)</td></tr>
+<tr><td><code>switchboard endpoint add</code></td><td>Required: <code>--name</code>, <code>--url</code>, <code>--model</code> · Optional: <code>--timeout-seconds</code> (default 30)</td></tr>
+<tr><td><code>switchboard endpoint list</code></td><td>No flags — shows name, address, model, health</td></tr>
+<tr><td><code>switchboard endpoint remove</code></td><td>Endpoint name as the argument</td></tr>
+<tr><td><code>switchboard profile list</code></td><td>No flags</td></tr>
+<tr><td><code>switchboard profile use NAME</code></td><td>Exactly one argument, the profile name; no flags</td></tr>
+<tr><td><code>switchboard profile show</code></td><td>No flags — prints the active profile</td></tr>
+<tr><td><code>switchboard usage</code></td><td><code>--days</code> (default 1, range 1 to 90), <code>--model</code> (filter to one model)</td></tr>
+<tr><td><code>switchboard status</code></td><td>No flags — gateway state, active profile, endpoint health, last 24 hours of token totals</td></tr>
+</tbody></table>
+<p>Every command accepts <code>--help</code> and exits 0.</p>
+<h3>Exit codes 0 to 4</h3>
+<table><thead><tr><th>Code</th><th>Meaning</th></tr></thead><tbody>
+<tr><td>0</td><td>Command completed as requested</td></tr>
+<tr><td>1</td><td>General error — missing config file, invalid flag value, failed database write; error printed to standard error</td></tr>
+<tr><td>2</td><td>Usage error — missing required flag or unknown subcommand</td></tr>
+<tr><td>3</td><td>Gateway could not start — listen address already in use, or a configured endpoint address is invalid</td></tr>
+<tr><td>4</td><td>Requested profile or endpoint name does not exist</td></tr>
+</tbody></table>
+<h3>Config precedence (highest first)</h3>
+<ol><li>Command-line flags</li><li>Environment variables with the <code>SWITCHBOARD_</code> prefix, for example <code>SWITCHBOARD_LISTEN</code></li><li>Config file</li><li>Built-in defaults</li></ol>
+<p class="mut">Config file search order: path from <code>--config</code>, then <code>./switchboard.yaml</code> in the working directory, then <code>$HOME/.config/switchboard/switchboard.yaml</code>. Values merge by key; a higher source replaces only that key.</p>
+<h3>Phase 7 hardening limits</h3>
+<ul><li>Request body cap: 10 megabytes → HTTP 413 above it</li><li>At most 100 requests at the same time → HTTP 429 above it</li><li>Unreachable endpoint → HTTP 502 · no healthy endpoint for the active profile → HTTP 503</li><li>Missing <code>model</code> field or malformed JSON → HTTP 400, and no usage row is written</li><li>Health probe every 30 seconds; a health state older than 60 seconds is stale</li><li>Gateway stays running after every failure case; usage rows are never lost for completed requests</li></ul>
+<p class="mut">Non-goals (spec): hosting or running model inference itself; proxying to cloud model providers or cloud billing; a graphical user interface or web dashboard; fine-tuning, training, or evaluating models; multi-user authentication, single sign-on, or team access control.</p></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+let state={endpoints:[],active:'drafting',gateway:false,log:[],inflight:0};
+function save(){if(window.hatchWidget&&window.hatchWidget.setState){try{window.hatchWidget.setState(state);}catch(e){}}}
+if(window.hatchWidget&&window.hatchWidget.getState){try{state=Object.assign(state,window.hatchWidget.getState(state));}catch(e){}}
+window.addEventListener('hatch-widget-state',ev=>{if(ev.detail&&ev.detail.state){state=Object.assign(state,ev.detail.state);render();}});
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function render(){
+ $('activeProfile').textContent=state.active;
+ $('gwState').textContent=state.gateway?'RUNNING':'STOPPED';
+ $('gwState').className='pill '+(state.gateway?'healthy':'unknown');
+ $('gwInfo').textContent=state.gateway?('Gateway running on '+$('listen').value+' — one OpenAI-compatible address for all clients.'):'Gateway not started. Start it, then send a request below.';
+ $('epList').innerHTML=state.endpoints.length?state.endpoints.map((e,i)=>'<div class="row" style="justify-content:space-between;border-bottom:1px solid #334155;padding:6px 0"><span><b>'+esc(e.name)+'</b> · '+esc(e.model)+' · '+esc(e.size)+'<br><span class="mut">'+esc(e.url)+' · timeout '+e.timeout+'s · probed '+(e.probed||'never')+'</span></span><span><span class="pill '+(e.health||'unknown')+'">'+(e.health||'unknown').toUpperCase()+'</span> <button class="ghost" onclick="removeEp('+i+')">Remove</button></span></div>').join(''):'<p class="mut">No endpoints yet. Register one above.</p>';
+ $('profiles').innerHTML=['drafting','review'].map(p=>'<div class="row"><span class="pill '+(state.active===p?'active':'unknown')+'">'+p.toUpperCase()+'</span><span class="mut">'+(p==='drafting'?'small local model for drafting':'larger local model for review')+' → '+(routeFor(p)?esc(routeFor(p).name):'no matching endpoint')+'</span></div>').join('');
+ $('routeMap').textContent='drafting -> '+(routeFor('drafting')?routeFor('drafting').name+' ('+routeFor('drafting').model+')':'NO SMALL ENDPOINT')+'\nreview   -> '+(routeFor('review')?routeFor('review').name+' ('+routeFor('review').model+')':'NO LARGE ENDPOINT');
+ const rows=state.log.slice().reverse();
+ $('logBody').innerHTML=rows.length?rows.map(r=>'<tr><td>'+esc(r.time)+'</td><td>'+esc(r.profile)+'</td><td>'+esc(r.endpoint)+' / '+esc(r.model)+'</td><td>'+r.prompt+' + '+r.completion+' = '+(r.prompt+r.completion)+'</td><td>'+r.ms+'</td><td>'+esc(r.outcome)+'</td></tr>').join(''):'<tr><td colspan="6" class="mut">No rows yet.</td></tr>';
+ showTotals();
+}
+function routeFor(p){return state.endpoints.find(e=>e.size===(p==='drafting'?'small':'large'));}
+async function probe(e){
+ if(e.url.startsWith('stub://')){e.health='healthy';e.probed=new Date().toLocaleTimeString();return;}
+ try{const c=new AbortController();setTimeout(()=>c.abort(),5000);
+  await fetch(e.url,{method:'GET',mode:'no-cors',signal:c.signal});e.health='healthy';}
+ catch(err){e.health='unhealthy';}
+ e.probed=new Date().toLocaleTimeString();save();render();
+}
+$('addEp').onclick=()=>{
+ const name=$('epName').value.trim(),url=$('epUrl').value.trim(),model=$('epModel').value.trim();
+ if(!name||!url||!model){$('epMsg').textContent='Exit 2: --name, --url and --model are all required.';$('epMsg').className='err';return;}
+ if(state.endpoints.some(e=>e.name===name)){$('epMsg').textContent='Exit 1: an endpoint named '+name+' already exists.';$('epMsg').className='err';return;}
+ if(!/^https?:\/\//.test(url)&&!url.startsWith('stub://')){$('epMsg').textContent='Exit 3: invalid endpoint address. Use http://, https://, or stub://echo.';$('epMsg').className='err';return;}
+ state.endpoints.push({name,url,model,size:$('epSize').value,timeout:+$('epTimeout').value||30,health:'unknown',probed:''});
+ $('epMsg').textContent='Exit 0: endpoint '+name+' registered.';$('epMsg').className='good';save();render();probe(state.endpoints[state.endpoints.length-1]);
+};
+window.removeEp=i=>{state.endpoints.splice(i,1);save();render();};
+$('probeBtn').onclick=async()=>{for(const e of state.endpoints)await probe(e);};
+$('useDraft').onclick=()=>{state.active='drafting';save();render();};
+$('useReview').onclick=()=>{state.active='review';save();render();};
+$('startBtn').onclick=()=>{if(!/^\d+\.\d+\.\d+\.\d+:\d+$/.test($('listen').value.trim())&&$('listen').value.trim()!=='localhost:8080'){$('statusOut').textContent='Exit 3: invalid listen address.';return;}state.gateway=true;save();render();};
+$('stopBtn').onclick=()=>{state.gateway=false;save();render();};
+$('statusBtn').onclick=()=>{const t=totals(1);$('statusOut').textContent='Gateway '+(state.gateway?'running':'stopped')+' · profile '+state.active+' · '+state.endpoints.length+' endpoint(s) · last 24h tokens: '+t.total;};
+function totals(days){const cut=Date.now()-days*864e5;let total=0,by={};for(const r of state.log){if(new Date(r.time).getTime()<cut)continue;total+=r.prompt+r.completion;by[r.model]=(by[r.model]||0)+r.prompt+r.completion;}return{total,by};}
+function showTotals(){const d=+$('daysSel').value||1;const t=totals(d);$('totalsOut').textContent='Last '+d+' day(s) — total tokens: '+t.total+'\n'+(Object.keys(t.by).length?Object.entries(t.by).map(([m,v])=>m+': '+v).join('\n'):'No completed requests in this period.');}
+$('totalsBtn').onclick=showTotals;$('daysSel').onchange=showTotals;
+$('exportBtn').onclick=()=>{const b=new Blob([JSON.stringify(state.log,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='switchboard-usage.json';a.click();};
+$('clearBtn').onclick=()=>{if(confirm('Clear the local usage log?')){state.log=[];save();render();}};
+function validateReq(raw){
+ if(new Blob([raw]).size>10*1024*1024)return{status:413,error:'HTTP 413: request body over the 10 MB cap.'};
+ let j;try{j=JSON.parse(raw);}catch(e){return{status:400,error:'HTTP 400: malformed JSON — '+e.message};}
+ if(!j.model)return{status:400,error:'HTTP 400: missing model field.'};
+ if(!Array.isArray(j.messages)||!j.messages.length)return{status:400,error:'HTTP 400: messages must be a non-empty array.'};
+ for(const m of j.messages){if(!m.role||typeof m.content!=='string')return{status:400,error:'HTTP 400: each message needs a role and a string content.'};}
+ return{status:200,body:j};
+}
+async function sendReq(validateOnly){
+ const raw=$('reqBody').value;const v=validateReq(raw);
+ if(v.status!==200){$('reqMsg').textContent=v.error;$('reqMsg').className='err';$('respOut').textContent=v.error+'\nNo usage row written (rejected requests write no row).';return;}
+ if(validateOnly){$('reqMsg').textContent='Valid. Would route to '+(routeFor(state.active)?routeFor(state.active).name:'no endpoint')+'.';$('reqMsg').className='good';$('respOut').textContent='Validation passed.\nmodel: '+v.body.model+'\nmessages: '+v.body.messages.length+'\nactive profile: '+state.active+'\nrouted endpoint: '+(routeFor(state.active)?routeFor(state.active).name+' ('+routeFor(state.active).url+')':'none');return;}
+ if(!state.gateway){$('reqMsg').textContent='HTTP 503: gateway is not running. Start it first.';$('reqMsg').className='err';$('respOut').textContent='Gateway stopped. Start the gateway, then send again.';return;}
+ if(state.inflight>=100){$('reqMsg').textContent='HTTP 429: over 100 concurrent requests.';return;}
+ const ep=routeFor(state.active);
+ if(!ep){$('reqMsg').textContent='HTTP 503: no endpoint for profile '+state.active+'.';$('reqMsg').className='err';$('respOut').textContent='HTTP 503: no endpoint registered for profile '+state.active+'. Register a '+(state.active==='drafting'?'small':'large')+' endpoint first.';return;}
+ if(ep.health==='unhealthy'){$('reqMsg').textContent='HTTP 503: endpoint '+ep.name+' is unhealthy — routing refused.';$('reqMsg').className='err';$('respOut').textContent='HTTP 503: endpoint '+ep.name+' is unhealthy. Routing refused.';return;}
+ if(ep.health==='unknown')await probe(ep);
+ if(ep.health==='unhealthy'){$('reqMsg').textContent='HTTP 503: endpoint '+ep.name+' is unhealthy — routing refused.';return;}
+ state.inflight++;const t0=performance.now();
+ try{
+  let data,usage;
+  if(ep.url.startsWith('stub://')){
+    const words=raw.split(/\s+/).length;
+    data={id:'chatcmpl-stub',object:'chat.completion',model:ep.model,choices:[{index:0,message:{role:'assistant',content:'[TEST STUB — not a model] Echo of your request to '+ep.name+': '+JSON.stringify(v.body.messages)} ,finish_reason:'stop'}],usage:{prompt_tokens:words,completion_tokens:12,total_tokens:words+12}};
+    usage=data.usage;
+  }else{
+    const c=new AbortController();setTimeout(()=>c.abort(),(ep.timeout||30)*1000);
+    const r=await fetch(ep.url.replace(/\/$/,'')+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(v.body),signal:c.signal});
+    if(!r.ok)throw new Error('Endpoint answered HTTP '+r.status);
+    data=await r.json();usage=data.usage||{prompt_tokens:0,completion_tokens:0,total_tokens:0};
+  }
+  const ms=Math.round(performance.now()-t0);
+  const prompt=usage.prompt_tokens||0,completion=usage.completion_tokens||0;
+  state.log.push({time:new Date().toISOString(),profile:state.active,endpoint:ep.name,model:ep.model,prompt,completion,ms,outcome:'200 OK'});
+  save();render();
+  $('reqMsg').textContent='200 OK — routed to '+ep.name+' in '+ms+' ms. One usage row written.';$('reqMsg').className='good';
+  $('respOut').textContent=JSON.stringify(data,null,2);
+ }catch(err){
+  const ms=Math.round(performance.now()-t0);
+  state.log.push({time:new Date().toISOString(),profile:state.active,endpoint:ep.name,model:ep.model,prompt:0,completion:0,ms,outcome:'502 unreachable'});
+  // Correct per spec: failed requests are not completed requests; remove that row and note it
+  state.log.pop();save();render();
+  $('reqMsg').textContent='HTTP 502: endpoint '+ep.name+' unreachable ('+err.message+'). No model reply invented; no usage row written.';$('reqMsg').className='err';
+  $('respOut').textContent='HTTP 502 Bad Gateway\nEndpoint '+ep.name+' at '+ep.url+' could not be reached from this browser.\nReason: '+err.message+'\nThis usually means no local model server is running there, or the browser blocked the cross-origin call. Start a real local model server at that address and try again. No reply was invented.';
+ }finally{state.inflight--;}
+}
+$('sendBtn').onclick=()=>sendReq(false);
+$('validateBtn').onclick=()=>sendReq(true);
+$('cliRun').onclick=()=>{
+ const line=$('cliInput').value.trim();const parts=line.split(/\s+/);
+ const out=[];let code=0;
+ if(parts[0]!=='switchboard'){out.push('command not found: '+parts[0]);code=2;}
+ else if(parts[1]==='--help'||!parts[1]){out.push('switchboard — Offline Local Model Switchboard CLI\nCommands: serve, endpoint add|list|remove, profile list|use|show, usage, status');}
+ else if(parts[1]==='serve'){state.gateway=true;save();render();out.push('Gateway started on '+$('listen').value+' (exit 0)');}
+ else if(parts[1]==='endpoint'&&parts[2]==='list'){out.push(state.endpoints.length?state.endpoints.map(e=>e.name+'  '+e.url+'  '+e.model+'  '+(e.health||'unknown')).join('\n'):'No endpoints registered.');}
+ else if(parts[1]==='endpoint'&&parts[2]==='add'){out.push('Use the registration form above, or: switchboard endpoint add --name NAME --url URL --model MODEL [--timeout-seconds 30]');}
+ else if(parts[1]==='endpoint'&&parts[2]==='remove'){const n=parts[3];const i=state.endpoints.findIndex(e=>e.name===n);if(i<0){out.push('Exit 4: endpoint '+n+' does not exist.');code=4;}else{state.endpoints.splice(i,1);save();render();out.push('Endpoint '+n+' removed. (exit 0)');}}
+ else if(parts[1]==='profile'&&parts[2]==='list'){out.push('drafting\nreview\nActive: '+state.active);}
+ else if(parts[1]==='profile'&&parts[2]==='use'){const n=parts[3];if(n!=='drafting'&&n!=='review'){out.push('Exit 4: profile '+n+' does not exist.');code=4;}else{state.active=n;save();render();out.push('Active profile: '+n+' (exit 0)');}}
+ else if(parts[1]==='profile'&&parts[2]==='show'){out.push('Active profile: '+state.active);}
+ else if(parts[1]==='usage'){const d=+$('daysSel').value||1;const t=totals(d);out.push('Usage, last '+d+' day(s): '+t.total+' tokens total\n'+(Object.entries(t.by).map(([m,v])=>m+': '+v).join('\n')||'No completed requests.'));}
+ else if(parts[1]==='status'){const t=totals(1);out.push('Gateway: '+(state.gateway?'running':'stopped')+'\nActive profile: '+state.active+'\nEndpoints:\n'+(state.endpoints.map(e=>'  '+e.name+' ('+e.model+') — '+(e.health||'unknown')).join('\n')||'  none')+'\nLast 24h tokens: '+t.total);}
+ else{out.push('Exit 2: unknown subcommand: '+(parts[1]||''));code=2;}
+ $('cliOut').textContent='exit '+code+'\n'+out.join('\n');
+};
+render();
+</script></body></html>

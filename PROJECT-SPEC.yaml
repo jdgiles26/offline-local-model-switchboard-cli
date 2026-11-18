@@ -1,0 +1,44 @@
+# PROJECT-SPEC.yaml — canonical source of truth for this package.
+# Every other file in this package derives from this spec, not re-decides it.
+project_name: "Offline Local Model Switchboard CLI"
+description: "A command-line tool that starts a self-hosted gateway on a laptop or on-premises server, registers locally running model endpoints behind one OpenAI-compatible address, and switches routing profiles between a small local model for drafting and a larger local model for review without changing client configuration, while logging all usage locally so token counts and costs stay visible even when no cloud provider is reachable."
+project_type: "cli-tool"
+tech_stack:
+  - {name: "Go", version: "1", role: "Language and runtime for the CLI and the gateway server"}
+  - {name: "Cobra", version: "1", role: "Command tree, subcommands, flags, and help output for the CLI"}
+  - {name: "Viper", version: "1", role: "Configuration file, environment variable, and flag precedence handling"}
+  - {name: "SQLite", version: "3", role: "Embedded local database for usage and token-count records"}
+runtime_environment: "Go 1.23 on Linux, macOS, and Windows as a single static binary with no runtime dependencies beyond the local model endpoints it fronts"
+non_goals:
+  - "Hosting or running model inference itself; the tool only fronts endpoints that already run locally"
+  - "Proxying to cloud model providers or performing cloud billing and metering"
+  - "Providing a graphical user interface or web dashboard"
+  - "Fine-tuning, training, or evaluating models"
+  - "Multi-user authentication, single sign-on, or team access control"
+naming_tag: "OLMS"
+constraints:
+  - "The gateway must start and serve requests with no network access beyond the local machine and the configured local endpoints"
+  - "All usage records must be stored only in the local SQLite database file, never sent to a remote service"
+  - "Client configuration must not change when a routing profile is switched"
+features:
+  - {name: "Single OpenAI-compatible gateway address", description: "The CLI starts one HTTP gateway on a fixed local address that accepts OpenAI-compatible chat completion requests and forwards them to a registered local endpoint, so IDEs and scripts point at one address regardless of which local model serves the request.", phase: 2}
+  - {name: "Local endpoint registration and health checks", description: "Operators register local model endpoints by name, base URL, and model identifier, and the CLI probes each endpoint every 30 seconds, marking it healthy or unhealthy and refusing to route to unhealthy endpoints.", phase: 3}
+  - {name: "Lane: offline local AI", description: "The CLI runs the gateway entirely self-hosted and keeps routing and usage tracking local, so local tools keep working and stay auditable when offline.", phase: 4}
+  - {name: "Routing profiles for drafting and review", description: "Named routing profiles map request kinds to endpoints, for example a small local model for drafting and a larger local model for review, and switching the active profile with one command takes effect within 1 second without editing any client configuration.", phase: 4}
+  - {name: "Local usage logging", description: "Every completed request writes one row to the local SQLite database with timestamp, profile, endpoint, model, prompt tokens, completion tokens, and elapsed milliseconds, and a CLI command prints daily totals per model.", phase: 5}
+  - {name: "Offline status and usage report", description: "A status command reports gateway state, active profile, endpoint health, and the last 24 hours of token totals from the local database without contacting any remote service.", phase: 6}
+modules:
+  - {name: "GatewayServer", responsibility: "Serves the OpenAI-compatible HTTP API on the configured local address, validates incoming requests, and returns streamed or non-streamed responses from the selected endpoint.", key_libraries: ["net/http", "encoding/json"], sends_to: ["ProfileRouter", "UsageStore"]}
+  - {name: "EndpointRegistry", responsibility: "Stores registered local endpoints, probes their health every 30 seconds, and reports which endpoints are healthy and available for routing.", key_libraries: ["net/http", "time"], sends_to: ["GatewayServer"]}
+  - {name: "ProfileRouter", responsibility: "Holds named routing profiles, selects the endpoint for each request from the active profile, and switches the active profile on command without restarting the gateway.", key_libraries: ["encoding/json", "sync"], sends_to: ["EndpointRegistry", "UsageStore"]}
+  - {name: "UsageStore", responsibility: "Writes one usage row per completed request to the local SQLite database and answers token-total queries grouped by model and day.", key_libraries: ["database/sql", "modernc.org/sqlite"], sends_to: []}
+  - {name: "ConfigLoader", responsibility: "Loads configuration from the config file, environment variables, and CLI flags in documented precedence order and validates listen address, endpoints, and profiles before startup.", key_libraries: ["viper", "cobra"], sends_to: ["GatewayServer", "ProfileRouter", "EndpointRegistry"]}
+phases:
+  - {id: 1, slug: "foundation", title: "Foundation", goal: "Create the Go module, CLI skeleton, configuration loader stub, and test runner with no feature code.", depends_on: []}
+  - {id: 2, slug: "vertical-slice", title: "Minimal end-to-end vertical slice", goal: "Serve one OpenAI-compatible chat completion request through the gateway to one hardcoded local endpoint.", depends_on: [1]}
+  - {id: 3, slug: "endpoint-registry", title: "Endpoint registry and health checks", goal: "Register, list, remove, and health-check local endpoints, and refuse to route to unhealthy endpoints.", depends_on: [2]}
+  - {id: 4, slug: "routing-profiles", title: "Routing profiles", goal: "Deliver named routing profiles and profile switching without restarting the gateway or changing client configuration.", depends_on: [3]}
+  - {id: 5, slug: "usage-logging", title: "Local usage logging", goal: "Record every completed request in the local SQLite database and report token totals per model and day.", depends_on: [4]}
+  - {id: 6, slug: "integration", title: "Integration", goal: "Wire all modules together so serve, profile switching, health checks, and usage reporting work as one system with no cloud contact.", depends_on: [5]}
+  - {id: 7, slug: "hardening", title: "Hardening", goal: "Handle failure paths, invalid input, and endpoint outages without crashing or losing usage records.", depends_on: [6]}
+  - {id: 8, slug: "release-verification", title: "Release verification and packaging", goal: "Verify the release binary on Linux, macOS, and Windows, package it, and confirm the CLI reference matches the shipped commands.", depends_on: [7]}
