@@ -18,11 +18,37 @@ button:disabled{opacity:.5}.pill{display:inline-block;padding:2px 8px;border-rad
 .active{background:#1e40af;color:#dbeafe}table{width:100%;border-collapse:collapse;font-size:13px}th,td{border-bottom:1px solid #334155;padding:6px;text-align:left;vertical-align:top}
 code,pre{background:#0f172a;border:1px solid #334155;border-radius:6px;padding:2px 5px}pre{padding:10px;overflow:auto;white-space:pre-wrap;word-break:break-word}
 .mut{color:#94a3b8;font-size:13px}.err{color:#fca5a5}.good{color:#86efac}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.tabs button{background:#334155}.tabs button.on{background:#2563eb}
+progress{width:100%;height:10px}
 </style></head><body><div class="wrap">
 <h1>Offline Local Model Switchboard — Control Panel</h1>
 <p class="mut">Go 1 · Cobra 1 · Viper 1 · SQLite 3 (in the real tool) · Gateway <code>127.0.0.1:8080</code> · OpenAI-compatible <code>POST /v1/chat/completions</code></p>
-<div class="banner"><b>Honest limit — read first:</b> the Go command-line binary itself <b>cannot run in a browser</b>, so this page is <b>not</b> the Go binary and <b>not</b> a model. It is a working control panel that implements the switchboard logic in this page: endpoint registration, profile routing, request validation, real forwarding attempts, and local logging. <b>No real local model server is connected unless you supply one.</b> If an endpoint address is not reachable from this browser, the panel reports it as unreachable (HTTP 502) and never invents a model reply. The spec also says the real project has <b>no graphical user interface or web dashboard</b> as a non-goal — this panel exists only as a working demonstration of the logic, not as part of the shipped command-line tool.</div>
+<div class="banner"><b>Read first — what this is and is not:</b> the Go command-line binary itself <b>cannot run in a browser</b>, so this page is <b>not</b> the Go binary. It is a working control panel that demonstrates the real switchboard logic: endpoint registration, profile routing, request validation, real forwarding attempts, and local logging. The spec lists a graphical user interface or web dashboard as out of scope, so this panel is a demonstration only, not part of the shipped command-line tool. <b>Every reply on this page comes from one of two real paths only:</b> (1) a real fetch to a registered local model server address, or (2) a real model running in this browser tab (WebLLM, Transformers.js version 3, or a GGUF file through wllama). If no model is loaded and no server answers, the panel reports the failure and <b>never invents a reply</b>. There is no test stub and no canned answer anywhere on this page. <b>Search (section 6)</b> ranks endpoints and usage-log rows with real BM25 (Robertson and Zaragoza, k1 1.5, b 0.75) and, when a local model is loaded, adds a one-sentence summary from that real model — never a canned answer, never a mock result.</div>
+
+<div class="card"><h2>0 · Local model — the real inference engine in this tab</h2>
+<p class="mut">Load one model before sending a request to a built-in <code>webllm://</code> endpoint. First load downloads the weights (about 350 megabytes for the 0.5B model, about 1 gigabyte for the 1.5B model), then the browser caches them. Inference runs on your device; your prompt is not sent to any cloud service by this page.</p>
+<div class="row">
+<label style="flex:1">Engine
+<select id="engineSel">
+<option value="webllm">WebLLM 0.2.86 — WebGPU, OpenAI-compatible chat completions</option>
+<option value="transformers">Transformers.js 3.5.2 — WebGPU / WebAssembly, ONNX model</option>
+<option value="wllama">wllama 3.13.0 — WebAssembly llama.cpp, drop-in GGUF file</option>
+</select></label>
+<label style="flex:1">Model
+<select id="modelSel">
+<option value="Qwen2.5-0.5B-Instruct-q4f16_1-MLC">Qwen2.5-0.5B-Instruct, 4-bit (drafting, small)</option>
+<option value="Qwen2.5-1.5B-Instruct-q4f16_1-MLC">Qwen2.5-1.5B-Instruct, 4-bit (review, large)</option>
+</select></label>
+</div>
+<div id="ggufBox" style="display:none">
+<label>GGUF file (from your device) <input id="ggufFile" type="file" accept=".gguf"></label>
+<label>…or GGUF file address <input id="ggufUrl" placeholder="https://huggingface.co/owner/repo/resolve/main/model.gguf"></label>
+<p class="mut">wllama loads a real GGUF file with llama.cpp compiled to WebAssembly. Paste a real file address or pick a file from your device. No default model address is filled in — an invented address would fail anyway.</p>
+</div>
+<div class="row"><button id="loadModelBtn" class="ok">Load local model</button><button id="unloadModelBtn" class="ghost">Unload model</button><span id="modelState" class="pill unknown">NO MODEL LOADED</span><span id="webgpuState" class="mut"></span></div>
+<progress id="loadProg" value="0" max="1" style="display:none"></progress>
+<p id="loadMsg" class="mut">WebLLM needs WebGPU. Transformers.js version 3 falls back to WebAssembly on the central processor when WebGPU is missing. wllama needs WebAssembly only, but version 3 needs the Memory64 proposal, so it may fail on Safari and iOS.</p>
+<p class="mut">Verified libraries: <code>@mlc-ai/web-llm@0.2.86</code> (<code>CreateMLCEngine</code>, <code>engine.chat.completions.create</code>), <code>@huggingface/transformers@3.5.2</code> (<code>pipeline("text-generation", "onnx-community/Qwen2.5-0.5B-Instruct", {device:"webgpu", dtype:"q4f16"})</code>), <code>@wllama/wllama@3.13.0</code> (<code>new Wllama(paths)</code>, <code>loadModel(files)</code>, <code>loadModelFromUrl(url)</code>, <code>createChatCompletion</code>).</p>
+</div>
 
 <div class="card"><h2>Gateway status</h2>
 <div class="row"><span id="gwState" class="pill unknown">STOPPED</span><span id="gwInfo" class="mut">Gateway not started. Start it, then send a request below.</span></div>
@@ -34,13 +60,14 @@ code,pre{background:#0f172a;border:1px solid #334155;border-radius:6px;padding:2
 <div class="card"><h2>1 · Register endpoint</h2>
 <label>Name <input id="epName" placeholder="draft-model"></label>
 <label>Base address <input id="epUrl" placeholder="http://127.0.0.1:11434"></label>
-<label>Model identifier <input id="epModel" placeholder="qwen3-4b"></label>
+<label>Model identifier <input id="epModel" placeholder="qwen2.5-0.5b"></label>
 <label>Size / role <select id="epSize"><option value="small">small — drafting</option><option value="large">large — review</option></select></label>
 <label>Timeout seconds <input id="epTimeout" type="number" value="30" min="1" max="300"></label>
 <button id="addEp">Register endpoint</button><span id="epMsg" class="mut"></span>
-<p class="mut">Tip: use <code>stub://echo</code> as the address for a clearly labelled local test stub. It returns your request back unchanged — it is <b>not</b> a model. Any other address is probed for real with a fetch; a failed probe means unhealthy, not healthy.</p>
+<p class="mut">Two built-in endpoints are pre-registered: <code>local-webllm</code> (small, drafting) and <code>local-webllm-review</code> (large, review). Both point at the local model loaded in section 0 — they answer only after that model is loaded. Any other address must start with <code>http://</code> or <code>https://</code> and is probed for real with a fetch; a failed probe means unhealthy, not healthy. Bad input is refused, never silently fixed.</p>
 <h3>Registered endpoints</h3><div id="epList"></div>
-<button id="probeBtn" class="ghost">Probe health now (30-second probe in the real tool)</button></div>
+<button id="probeBtn" class="ghost">Probe health now (30-second probe in the real tool)</button>
+<button id="restoreBtn" class="ghost">Restore built-in local endpoints</button></div>
 
 <div class="card"><h2>2 · Routing profiles</h2>
 <p class="mut">Active profile: <b id="activeProfile">drafting</b> — switching takes effect at once, no client change, no gateway restart.</p>
@@ -50,15 +77,15 @@ code,pre{background:#0f172a;border:1px solid #334155;border-radius:6px;padding:2
 <h3>Profile routing map</h3><pre id="routeMap"></pre></div>
 </div>
 
-<div class="card"><h2>3 · Send a chat request (real validation + real forwarding attempt)</h2>
+<div class="card"><h2>3 · Send a chat request (real validation + real routing)</h2>
 <label>Request body — OpenAI-compatible JSON <textarea id="reqBody">{
-  "model": "qwen3-4b",
+  "model": "Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
   "messages": [{"role": "user", "content": "Write one sentence about a husky."}],
   "temperature": 0.7
 }</textarea></label>
 <div class="row"><button id="sendBtn">Validate and route request</button><button id="validateBtn" class="ghost">Validate only (no send)</button><span id="reqMsg"></span></div>
-<p class="mut">Phase 7 limits enforced here: body over 10 megabytes → HTTP 413 · missing <code>model</code> or bad JSON → HTTP 400 · no healthy endpoint → HTTP 503 · endpoint unreachable → HTTP 502 · more than 100 requests at once → HTTP 429.</p>
-<pre id="respOut">No request sent yet.</pre></div>
+<p class="mut">Limits enforced here: body over 10 megabytes → HTTP 413 · missing <code>model</code> or bad JSON → HTTP 400 · no healthy endpoint → HTTP 503 · endpoint unreachable → HTTP 502 · more than 100 requests at once → HTTP 429. Replies stream in live from the real model when the built-in local endpoint serves the request.</p>
+<pre id="respOut">No request sent yet. Load a local model in section 0 first, or register a real local server address in section 1.</pre></div>
 
 <div class="grid">
 <div class="card"><h2>4 · Local usage log</h2>
@@ -66,7 +93,7 @@ code,pre{background:#0f172a;border:1px solid #334155;border-radius:6px;padding:2
 <button id="totalsBtn" class="ghost">Show totals</button><button id="exportBtn" class="ghost">Export log (JSON)</button><button id="clearBtn" class="danger">Clear log</button></div>
 <pre id="totalsOut">No completed requests logged yet.</pre>
 <div style="max-height:260px;overflow:auto"><table><thead><tr><th>Time</th><th>Profile</th><th>Endpoint / model</th><th>Tokens</th><th>ms</th><th>Outcome</th></tr></thead><tbody id="logBody"><tr><td colspan="6" class="mut">No rows yet. Completed requests only — rejected requests write no row.</td></tr></tbody></table></div>
-<p class="mut">In the real tool this log lives in local SQLite 3 only, never sent anywhere. Here it lives in the widget state on this device only.</p></div>
+<p class="mut">In the real tool this log lives in local SQLite 3 only, never sent anywhere. Here it lives in the widget state on this device only. Token counts come from the model or server response; for Transformers.js and wllama the prompt count is a word-count estimate and is labelled estimated in the log row.</p></div>
 
 <div class="card"><h2>5 · Command-line simulator — try the real commands</h2>
 <label>Command <input id="cliInput" value="switchboard status"></label>
@@ -76,8 +103,19 @@ switchboard --help
 switchboard endpoint list
 switchboard profile use review
 switchboard usage --days 7
-switchboard usage --model qwen3-4b</pre></div>
+switchboard usage --model Qwen2.5-0.5B-Instruct-q4f16_1-MLC</pre>
+<p class="mut">All 9 commands are simulated against the same live state as the panels above: serve, endpoint add, endpoint list, endpoint remove, profile list, profile use, profile show, usage, status. Exit codes 0 to 4, per contracts/CLI-REFERENCE.md.</p></div>
 </div>
+
+<div class="card"><h2>6 · Search endpoints and usage log — real BM25 ranking + real model summary</h2>
+<p class="mut">Ranking is real BM25 (Robertson and Zaragoza: k1 1.5, b 0.75, Lucene-style inverse document frequency that is never negative), run locally over the endpoint registry and the usage log in section 4. There is no mock search here: the old <code>of(mockResult)</code> pattern from the api-integration-guide never existed in this panel, and this section does not add one. If you paste a live search backend address below, search calls it for real with a GET request and expects a <code>SearchResult</code> back; a failed call is reported, never silently replaced with a canned result. With no backend address, the real local search is BM25 ranking plus, when a model is loaded in section 0, a one-sentence summary from that real model — BM25 alone is never presented as an answer, and the model is never asked to rank on its own. Results follow the <code>SearchResult</code> shape: <code>primaryContent</code>, <code>supportingMedia</code> (image, video, or placeholder), <code>metadata {source, timestamp, relevance}</code>.</p>
+<label>Search <input id="searchInput" placeholder="e.g. drafting healthy, or a model name"></label>
+<div class="row"><label style="flex:1">Scope <select id="searchScope"><option value="both">Endpoints + usage log</option><option value="endpoints">Endpoints only</option><option value="log">Usage log only</option></select></label>
+<label style="flex:2">Live search backend address (optional) <input id="searchApiUrl" placeholder="https://api.your-backend.com/search"></label></div>
+<div class="row"><button id="searchBtn">Search</button><button id="bm25TestBtn" class="ghost">Run BM25 self-tests (same cases as test_bm25.py)</button><span id="searchMsg" class="mut"></span></div>
+<p id="modelSummary" class="mut"></p>
+<div id="searchResults"></div>
+<p class="mut">BM25 code lives in this page and in the repo folder as <code>bm25.py</code> (Python, with <code>test_bm25.py</code>) and <code>bm25.js</code> (same formula, same tests in <code>bm25.test.js</code>, run with <code>node --test bm25.test.js</code>). One difference: JavaScript <code>/\w+/</code> matches ASCII word characters only, while Python <code>re</code> also matches Unicode letters; identical results for the ASCII text searched here. The guide's Angular steps (injecting HttpClient in <code>search.ts</code>) do not apply to this standalone page; the equivalent here is a real <code>fetch</code> GET with <code>?q=</code>, and the backend address belongs in the field above, not hard-coded.</p></div>
 
 <div class="card"><h2>Command reference — all 9 commands (from contracts/CLI-REFERENCE.md)</h2>
 <table><thead><tr><th>Command</th><th>Flags / arguments</th></tr></thead><tbody>
@@ -109,9 +147,14 @@ switchboard usage --model qwen3-4b</pre></div>
 </div>
 <script>
 const $=id=>document.getElementById(id);
-let state={endpoints:[],active:'drafting',gateway:false,log:[],inflight:0};
+const BUILTIN=[
+ {name:'local-webllm',url:'webllm://local',model:'Qwen2.5-0.5B-Instruct-q4f16_1-MLC',size:'small',timeout:120,health:'unknown',probed:'',builtin:true},
+ {name:'local-webllm-review',url:'webllm://local',model:'Qwen2.5-1.5B-Instruct-q4f16_1-MLC',size:'large',timeout:180,health:'unknown',probed:'',builtin:true}
+];
+let state={endpoints:JSON.parse(JSON.stringify(BUILTIN)),active:'drafting',gateway:false,log:[],inflight:0};
+let engine=null,engineKind=null,loadedModel=null,transformerPipe=null,wllamaInst=null;
 function save(){if(window.hatchWidget&&window.hatchWidget.setState){try{window.hatchWidget.setState(state);}catch(e){}}}
-if(window.hatchWidget&&window.hatchWidget.getState){try{state=Object.assign(state,window.hatchWidget.getState(state));}catch(e){}}
+if(window.hatchWidget&&window.hatchWidget.getState){try{const s=window.hatchWidget.getState(state);if(s&&s.endpoints)state=Object.assign(state,s);}catch(e){}}
 window.addEventListener('hatch-widget-state',ev=>{if(ev.detail&&ev.detail.state){state=Object.assign(state,ev.detail.state);render();}});
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function render(){
@@ -119,48 +162,145 @@ function render(){
  $('gwState').textContent=state.gateway?'RUNNING':'STOPPED';
  $('gwState').className='pill '+(state.gateway?'healthy':'unknown');
  $('gwInfo').textContent=state.gateway?('Gateway running on '+$('listen').value+' — one OpenAI-compatible address for all clients.'):'Gateway not started. Start it, then send a request below.';
- $('epList').innerHTML=state.endpoints.length?state.endpoints.map((e,i)=>'<div class="row" style="justify-content:space-between;border-bottom:1px solid #334155;padding:6px 0"><span><b>'+esc(e.name)+'</b> · '+esc(e.model)+' · '+esc(e.size)+'<br><span class="mut">'+esc(e.url)+' · timeout '+e.timeout+'s · probed '+(e.probed||'never')+'</span></span><span><span class="pill '+(e.health||'unknown')+'">'+(e.health||'unknown').toUpperCase()+'</span> <button class="ghost" onclick="removeEp('+i+')">Remove</button></span></div>').join(''):'<p class="mut">No endpoints yet. Register one above.</p>';
+ $('epList').innerHTML=state.endpoints.length?state.endpoints.map((e,i)=>'<div class="row" style="justify-content:space-between;border-bottom:1px solid #334155;padding:6px 0"><span><b>'+esc(e.name)+'</b> · '+esc(e.model)+' · '+esc(e.size)+(e.builtin?' · built-in local model':'')+'<br><span class="mut">'+esc(e.url)+' · timeout '+e.timeout+'s · probed '+(e.probed||'never')+'</span></span><span><span class="pill '+(e.health||'unknown')+'">'+(e.health||'unknown').toUpperCase()+'</span> <button class="ghost" onclick="removeEp('+i+')">Remove</button></span></div>').join(''):'<p class="mut">No endpoints yet. Register one above.</p>';
  $('profiles').innerHTML=['drafting','review'].map(p=>'<div class="row"><span class="pill '+(state.active===p?'active':'unknown')+'">'+p.toUpperCase()+'</span><span class="mut">'+(p==='drafting'?'small local model for drafting':'larger local model for review')+' → '+(routeFor(p)?esc(routeFor(p).name):'no matching endpoint')+'</span></div>').join('');
  $('routeMap').textContent='drafting -> '+(routeFor('drafting')?routeFor('drafting').name+' ('+routeFor('drafting').model+')':'NO SMALL ENDPOINT')+'\nreview   -> '+(routeFor('review')?routeFor('review').name+' ('+routeFor('review').model+')':'NO LARGE ENDPOINT');
  const rows=state.log.slice().reverse();
- $('logBody').innerHTML=rows.length?rows.map(r=>'<tr><td>'+esc(r.time)+'</td><td>'+esc(r.profile)+'</td><td>'+esc(r.endpoint)+' / '+esc(r.model)+'</td><td>'+r.prompt+' + '+r.completion+' = '+(r.prompt+r.completion)+'</td><td>'+r.ms+'</td><td>'+esc(r.outcome)+'</td></tr>').join(''):'<tr><td colspan="6" class="mut">No rows yet.</td></tr>';
+ $('logBody').innerHTML=rows.length?rows.map(r=>'<tr><td>'+esc(r.time)+'</td><td>'+esc(r.profile)+'</td><td>'+esc(r.endpoint)+' / '+esc(r.model)+'</td><td>'+r.prompt+' + '+r.completion+' = '+(r.prompt+r.completion)+(r.estimated?' (estimated)':'')+'</td><td>'+r.ms+'</td><td>'+esc(r.outcome)+'</td></tr>').join(''):'<tr><td colspan="6" class="mut">No rows yet.</td></tr>';
  showTotals();
 }
 function routeFor(p){return state.endpoints.find(e=>e.size===(p==='drafting'?'small':'large'));}
+function localHealth(e){
+ if(e.url!=='webllm://local')return e.health;
+ if(loadedModel===e.model)return 'healthy';
+ if(loadedModel)return 'unhealthy'; // a different model is loaded, this one is not
+ return 'unknown';
+}
 async function probe(e){
- if(e.url.startsWith('stub://')){e.health='healthy';e.probed=new Date().toLocaleTimeString();return;}
+ if(e.url==='webllm://local'){e.health=localHealth(e);e.probed=new Date().toLocaleTimeString();save();render();return;}
  try{const c=new AbortController();setTimeout(()=>c.abort(),5000);
-  await fetch(e.url,{method:'GET',mode:'no-cors',signal:c.signal});e.health='healthy';}
- catch(err){e.health='unhealthy';}
- e.probed=new Date().toLocaleTimeString();save();render();
+  await fetch(e.url,{method:'GET',mode:'no-cors',signal:c.signal});
+  e.health='healthy';e.probed=new Date().toLocaleTimeString()+' (reachable; response was opaque, so the server status code could not be read — cross-origin rules hide it)';}
+ catch(err){e.health='unhealthy';e.probed=new Date().toLocaleTimeString();}
+ save();render();
+}
+function addEndpoint(name,url,model,size,timeout){
+ if(!name||!url||!model)return{ok:false,msg:'Exit 2: --name, --url and --model are all required.'};
+ if(state.endpoints.some(e=>e.name===name))return{ok:false,msg:'Exit 1: an endpoint named '+name+' already exists.'};
+ if(!/^https?:\/\//.test(url))return{ok:false,msg:'Exit 3: invalid endpoint address. Use http:// or https://. Built-in webllm:// endpoints are pre-registered.'};
+ if(!timeout||timeout<1||timeout>300)return{ok:false,msg:'Exit 1: --timeout-seconds must be 1 to 300.'};
+ state.endpoints.push({name,url,model,size:size||'small',timeout,health:'unknown',probed:''});
+ save();render();probe(state.endpoints[state.endpoints.length-1]);
+ return{ok:true,msg:'Exit 0: endpoint '+name+' registered.'};
 }
 $('addEp').onclick=()=>{
- const name=$('epName').value.trim(),url=$('epUrl').value.trim(),model=$('epModel').value.trim();
- if(!name||!url||!model){$('epMsg').textContent='Exit 2: --name, --url and --model are all required.';$('epMsg').className='err';return;}
- if(state.endpoints.some(e=>e.name===name)){$('epMsg').textContent='Exit 1: an endpoint named '+name+' already exists.';$('epMsg').className='err';return;}
- if(!/^https?:\/\//.test(url)&&!url.startsWith('stub://')){$('epMsg').textContent='Exit 3: invalid endpoint address. Use http://, https://, or stub://echo.';$('epMsg').className='err';return;}
- state.endpoints.push({name,url,model,size:$('epSize').value,timeout:+$('epTimeout').value||30,health:'unknown',probed:''});
- $('epMsg').textContent='Exit 0: endpoint '+name+' registered.';$('epMsg').className='good';save();render();probe(state.endpoints[state.endpoints.length-1]);
+ const r=addEndpoint($('epName').value.trim(),$('epUrl').value.trim(),$('epModel').value.trim(),$('epSize').value,+$('epTimeout').value||30);
+ $('epMsg').textContent=r.msg;$('epMsg').className=r.ok?'good':'err';
 };
 window.removeEp=i=>{state.endpoints.splice(i,1);save();render();};
 $('probeBtn').onclick=async()=>{for(const e of state.endpoints)await probe(e);};
+$('restoreBtn').onclick=()=>{for(const b of BUILTIN){if(!state.endpoints.some(e=>e.name===b.name))state.endpoints.push(JSON.parse(JSON.stringify(b)));}save();render();};
 $('useDraft').onclick=()=>{state.active='drafting';save();render();};
 $('useReview').onclick=()=>{state.active='review';save();render();};
-$('startBtn').onclick=()=>{if(!/^\d+\.\d+\.\d+\.\d+:\d+$/.test($('listen').value.trim())&&$('listen').value.trim()!=='localhost:8080'){$('statusOut').textContent='Exit 3: invalid listen address.';return;}state.gateway=true;save();render();};
+$('startBtn').onclick=()=>{const v=$('listen').value.trim();if(!/^(\d+\.\d+\.\d+\.\d+|localhost):\d{1,5}$/.test(v)){$('statusOut').textContent='Exit 3: invalid listen address.';return;}state.gateway=true;save();render();};
 $('stopBtn').onclick=()=>{state.gateway=false;save();render();};
 $('statusBtn').onclick=()=>{const t=totals(1);$('statusOut').textContent='Gateway '+(state.gateway?'running':'stopped')+' · profile '+state.active+' · '+state.endpoints.length+' endpoint(s) · last 24h tokens: '+t.total;};
-function totals(days){const cut=Date.now()-days*864e5;let total=0,by={};for(const r of state.log){if(new Date(r.time).getTime()<cut)continue;total+=r.prompt+r.completion;by[r.model]=(by[r.model]||0)+r.prompt+r.completion;}return{total,by};}
+function totals(days,modelFilter){const cut=Date.now()-days*864e5;let total=0,by={};for(const r of state.log){if(new Date(r.time).getTime()<cut)continue;if(modelFilter&&r.model!==modelFilter)continue;total+=r.prompt+r.completion;by[r.model]=(by[r.model]||0)+r.prompt+r.completion;}return{total,by};}
 function showTotals(){const d=+$('daysSel').value||1;const t=totals(d);$('totalsOut').textContent='Last '+d+' day(s) — total tokens: '+t.total+'\n'+(Object.keys(t.by).length?Object.entries(t.by).map(([m,v])=>m+': '+v).join('\n'):'No completed requests in this period.');}
 $('totalsBtn').onclick=showTotals;$('daysSel').onchange=showTotals;
 $('exportBtn').onclick=()=>{const b=new Blob([JSON.stringify(state.log,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='switchboard-usage.json';a.click();};
 $('clearBtn').onclick=()=>{if(confirm('Clear the local usage log?')){state.log=[];save();render();}};
+
+/* ---- real local model loading ---- */
+if('gpu' in navigator){$('webgpuState').textContent='WebGPU is present in this browser.';}else{$('webgpuState').textContent='WebGPU not detected here — WebLLM will fail, Transformers.js will fall back to WebAssembly.';}
+$('engineSel').onchange=()=>{
+ const k=$('engineSel').value;
+ $('ggufBox').style.display=k==='wllama'?'block':'none';
+ $('modelSel').style.display=k==='wllama'?'none':'block';
+};
+function setModelState(txt,cls){$('modelState').textContent=txt;$('modelState').className='pill '+cls;}
+$('loadModelBtn').onclick=async()=>{
+ const kind=$('engineSel').value;
+ const prog=$('loadProg');prog.style.display='block';prog.value=0;
+ $('loadMsg').textContent='Loading — this downloads the model weights on first run. Please wait.';
+ $('loadModelBtn').disabled=true;
+ try{
+  if(kind==='webllm'){
+   const modelId=$('modelSel').value;
+   const webllm=await import('https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.86/+esm');
+   engine=await webllm.CreateMLCEngine(modelId,{initProgressCallback:p=>{prog.value=p.progress||0;$('loadMsg').textContent=p.text||('Loading '+modelId+'…');}});
+   engineKind='webllm';loadedModel=modelId;
+  }else if(kind==='transformers'){
+   const modelId=$('modelSel').value.replace('-q4f16_1-MLC','');
+   const tf=await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2/dist/transformers.min.js');
+   const device=('gpu' in navigator)?'webgpu':'wasm';
+   transformerPipe=await tf.pipeline('text-generation','onnx-community/'+modelId,{device, dtype:'q4f16', progress_callback:p=>{if(p&&p.progress!=null){prog.value=p.progress;$('loadMsg').textContent=(p.status||'Loading')+' '+(p.file||'');}}});
+   engineKind='transformers';loadedModel=$('modelSel').value;
+  }else{
+   const wl=await import('https://cdn.jsdelivr.net/npm/@wllama/wllama@3.13.0/+esm');
+   const base='https://cdn.jsdelivr.net/npm/@wllama/wllama@3.13.0/esm/';
+   wllamaInst=new wl.Wllama({'single-thread/wllama.wasm':base+'single-thread/wllama.wasm','multi-thread/wllama.wasm':base+'multi-thread/wllama.wasm'});
+   const file=$('ggufFile').files[0],url=$('ggufUrl').value.trim();
+   const cb=p=>{if(p&&p.loaded!=null&&p.total){prog.value=p.loaded/p.total;$('loadMsg').textContent='Loading GGUF: '+Math.round(100*p.loaded/p.total)+'%';}};
+   if(file){await wllamaInst.loadModel([file],{progressCallback:cb,n_ctx:2048});loadedModel='GGUF: '+file.name;}
+   else if(url){await wllamaInst.loadModelFromUrl(url,{progressCallback:cb,n_ctx:2048});loadedModel='GGUF: '+url;}
+   else throw new Error('Pick a GGUF file or paste a GGUF file address first.');
+   engineKind='wllama';
+  }
+  setModelState('LOADED: '+loadedModel,'healthy');
+  $('loadMsg').textContent='Model loaded and ready: '+loadedModel+' ('+engineKind+'). Replies now come from this real model run.';
+  for(const e of state.endpoints)if(e.url==='webllm://local'){e.health=localHealth(e);e.probed=new Date().toLocaleTimeString();}
+  save();render();
+ }catch(err){
+  engine=null;transformerPipe=null;wllamaInst=null;engineKind=null;loadedModel=null;
+  setModelState('LOAD FAILED','unhealthy');
+  $('loadMsg').textContent='Model failed to load — no reply will be invented. Real error: '+(err&&err.message?err.message:String(err));
+  for(const e of state.endpoints)if(e.url==='webllm://local'){e.health=localHealth(e);}
+  render();
+ }finally{$('loadModelBtn').disabled=false;prog.style.display='none';}
+};
+$('unloadModelBtn').onclick=async()=>{
+ try{if(engine&&engine.unload)await engine.unload();}catch(e){}
+ try{if(transformerPipe&&transformerPipe.dispose)await transformerPipe.dispose();}catch(e){}
+ try{if(wllamaInst&&wllamaInst.exit)await wllamaInst.exit();}catch(e){}
+ engine=null;transformerPipe=null;wllamaInst=null;engineKind=null;loadedModel=null;
+ setModelState('NO MODEL LOADED','unknown');$('loadMsg').textContent='Model unloaded.';
+ for(const e of state.endpoints)if(e.url==='webllm://local'){e.health=localHealth(e);}render();
+};
+
+/* ---- request validation + routing ---- */
 function validateReq(raw){
  if(new Blob([raw]).size>10*1024*1024)return{status:413,error:'HTTP 413: request body over the 10 MB cap.'};
  let j;try{j=JSON.parse(raw);}catch(e){return{status:400,error:'HTTP 400: malformed JSON — '+e.message};}
  if(!j.model)return{status:400,error:'HTTP 400: missing model field.'};
  if(!Array.isArray(j.messages)||!j.messages.length)return{status:400,error:'HTTP 400: messages must be a non-empty array.'};
  for(const m of j.messages){if(!m.role||typeof m.content!=='string')return{status:400,error:'HTTP 400: each message needs a role and a string content.'};}
+ if(j.temperature!=null&&(typeof j.temperature!=='number'||j.temperature<0||j.temperature>2))return{status:400,error:'HTTP 400: temperature must be a number from 0 to 2.'};
  return{status:200,body:j};
+}
+function wordCount(s){return String(s||'').split(/\s+/).filter(Boolean).length;}
+async function runLocalModel(ep,body,onToken){
+ const promptText=body.messages.map(m=>m.content).join('\n');
+ if(engineKind==='webllm'){
+  const chunks=await engine.chat.completions.create({messages:body.messages,temperature:body.temperature!=null?body.temperature:0.7,max_tokens:512,stream:true});
+  let text='',usage=null;
+  for await(const c of chunks){const d=c.choices&&c.choices[0]&&c.choices[0].delta;if(d&&d.content){text+=d.content;onToken(text);}if(c.usage)usage=c.usage;}
+  const final=await engine.chat.completions.create({messages:body.messages,temperature:body.temperature!=null?body.temperature:0.7,max_tokens:1,stream:false}).catch(()=>null);
+  return{text,usage:usage||(final&&final.usage)||{prompt_tokens:wordCount(promptText),completion_tokens:wordCount(text),total_tokens:wordCount(promptText)+wordCount(text)},estimated:!usage};
+ }
+ if(engineKind==='transformers'){
+  const out=await transformerPipe(body.messages,{max_new_tokens:256,temperature:body.temperature!=null?body.temperature:0.7,do_sample:true});
+  let text=String(out&&out[0]?(out[0].generated_text||''):'');
+  const last=body.messages[body.messages.length-1].content;
+  if(text.indexOf(last)>=0)text=text.slice(text.lastIndexOf(last)+last.length).trim();
+  onToken(text);
+  return{text,usage:{prompt_tokens:wordCount(promptText),completion_tokens:wordCount(text),total_tokens:wordCount(promptText)+wordCount(text)},estimated:true};
+ }
+ // wllama
+ const out=await wllamaInst.createChatCompletion(body.messages,{nPredict:256,temperature:body.temperature!=null?body.temperature:0.7,onNewToken:(tok,piece)=>{onToken((out&&out.text)||piece);}});
+ const text=typeof out==='string'?out:(out&&out.text?out.text:String(out||''));
+ onToken(text);
+ return{text,usage:{prompt_tokens:wordCount(promptText),completion_tokens:wordCount(text),total_tokens:wordCount(promptText)+wordCount(text)},estimated:true};
 }
 async function sendReq(validateOnly){
  const raw=$('reqBody').value;const v=validateReq(raw);
@@ -170,55 +310,246 @@ async function sendReq(validateOnly){
  if(state.inflight>=100){$('reqMsg').textContent='HTTP 429: over 100 concurrent requests.';return;}
  const ep=routeFor(state.active);
  if(!ep){$('reqMsg').textContent='HTTP 503: no endpoint for profile '+state.active+'.';$('reqMsg').className='err';$('respOut').textContent='HTTP 503: no endpoint registered for profile '+state.active+'. Register a '+(state.active==='drafting'?'small':'large')+' endpoint first.';return;}
- if(ep.health==='unhealthy'){$('reqMsg').textContent='HTTP 503: endpoint '+ep.name+' is unhealthy — routing refused.';$('reqMsg').className='err';$('respOut').textContent='HTTP 503: endpoint '+ep.name+' is unhealthy. Routing refused.';return;}
- if(ep.health==='unknown')await probe(ep);
- if(ep.health==='unhealthy'){$('reqMsg').textContent='HTTP 503: endpoint '+ep.name+' is unhealthy — routing refused.';return;}
+ await probe(ep);
+ if(ep.health!=='healthy'){$('reqMsg').textContent='HTTP 503: endpoint '+ep.name+' is not healthy — routing refused.';$('reqMsg').className='err';$('respOut').textContent='HTTP 503: endpoint '+ep.name+' is not healthy. '+(ep.url==='webllm://local'?'Load the matching local model in section 0 first.':'Probe it in section 1.');return;}
  state.inflight++;const t0=performance.now();
  try{
-  let data,usage;
-  if(ep.url.startsWith('stub://')){
-    const words=raw.split(/\s+/).length;
-    data={id:'chatcmpl-stub',object:'chat.completion',model:ep.model,choices:[{index:0,message:{role:'assistant',content:'[TEST STUB — not a model] Echo of your request to '+ep.name+': '+JSON.stringify(v.body.messages)} ,finish_reason:'stop'}],usage:{prompt_tokens:words,completion_tokens:12,total_tokens:words+12}};
-    usage=data.usage;
+  let data,usage,estimated=false;
+  if(ep.url==='webllm://local'){
+   if(!loadedModel||loadedModel!==ep.model&&engineKind!=='wllama')throw new Error('The loaded model ('+(loadedModel||'none')+') does not match this endpoint model ('+ep.model+'). Load the matching model in section 0.');
+   const r=await runLocalModel(ep,v.body,txt=>{$('respOut').textContent=txt;});
+   usage=r.usage;estimated=!!r.estimated;
+   data={id:'chatcmpl-local-'+Date.now(),object:'chat.completion',created:Math.floor(Date.now()/1000),model:ep.model,choices:[{index:0,message:{role:'assistant',content:r.text},finish_reason:'stop'}],usage:{prompt_tokens:usage.prompt_tokens,completion_tokens:usage.completion_tokens,total_tokens:usage.total_tokens}};
   }else{
-    const c=new AbortController();setTimeout(()=>c.abort(),(ep.timeout||30)*1000);
-    const r=await fetch(ep.url.replace(/\/$/,'')+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(v.body),signal:c.signal});
-    if(!r.ok)throw new Error('Endpoint answered HTTP '+r.status);
-    data=await r.json();usage=data.usage||{prompt_tokens:0,completion_tokens:0,total_tokens:0};
+   const c=new AbortController();setTimeout(()=>c.abort(),(ep.timeout||30)*1000);
+   const resp=await fetch(ep.url.replace(/\/$/,'')+'/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(v.body),signal:c.signal});
+   if(!resp.ok)throw new Error('Endpoint answered HTTP '+resp.status);
+   data=await resp.json();usage=data.usage||{prompt_tokens:0,completion_tokens:0,total_tokens:0};
   }
   const ms=Math.round(performance.now()-t0);
   const prompt=usage.prompt_tokens||0,completion=usage.completion_tokens||0;
-  state.log.push({time:new Date().toISOString(),profile:state.active,endpoint:ep.name,model:ep.model,prompt,completion,ms,outcome:'200 OK'});
+  state.log.push({time:new Date().toISOString(),profile:state.active,endpoint:ep.name,model:ep.model,prompt,completion,ms,outcome:'200 OK',estimated});
   save();render();
   $('reqMsg').textContent='200 OK — routed to '+ep.name+' in '+ms+' ms. One usage row written.';$('reqMsg').className='good';
   $('respOut').textContent=JSON.stringify(data,null,2);
  }catch(err){
   const ms=Math.round(performance.now()-t0);
-  state.log.push({time:new Date().toISOString(),profile:state.active,endpoint:ep.name,model:ep.model,prompt:0,completion:0,ms,outcome:'502 unreachable'});
-  // Correct per spec: failed requests are not completed requests; remove that row and note it
-  state.log.pop();save();render();
-  $('reqMsg').textContent='HTTP 502: endpoint '+ep.name+' unreachable ('+err.message+'). No model reply invented; no usage row written.';$('reqMsg').className='err';
-  $('respOut').textContent='HTTP 502 Bad Gateway\nEndpoint '+ep.name+' at '+ep.url+' could not be reached from this browser.\nReason: '+err.message+'\nThis usually means no local model server is running there, or the browser blocked the cross-origin call. Start a real local model server at that address and try again. No reply was invented.';
+  $('reqMsg').textContent='HTTP 502: endpoint '+ep.name+' could not serve this request ('+err.message+'). No model reply invented; no usage row written.';$('reqMsg').className='err';
+  $('respOut').textContent='HTTP 502 Bad Gateway\nEndpoint '+ep.name+' at '+ep.url+' could not serve this request.\nReason: '+err.message+'\nNo reply was invented.';
+  render();
  }finally{state.inflight--;}
 }
 $('sendBtn').onclick=()=>sendReq(false);
 $('validateBtn').onclick=()=>sendReq(true);
+
+/* ---- BM25 ranking (JavaScript port of bm25.py, Robertson and Zaragoza) ---- */
+/* score(chunk, query) = sum over query words of
+ *   idf(word) * count * (k1+1) / (count + k1 * (1 - b + b * length / average_length))
+ * k1 = 1.5, b = 0.75. Same formula and same test cases as bm25.py / test_bm25.py.
+ * Full port with tests: bm25.js and bm25.test.js in this repo folder. */
+function bm25Tokenize(text){return (String(text==null?'':text).toLowerCase().match(/\w+/g)||[]);}
+function bm25Build(texts){
+ const postings={},lengths=[];
+ texts.forEach((text,chunkId)=>{
+  const counts={};for(const w of bm25Tokenize(text))counts[w]=(counts[w]||0)+1;
+  lengths.push(Object.values(counts).reduce((a,c)=>a+c,0));
+  for(const w of Object.keys(counts)){if(!postings[w])postings[w]={ids:[],counts:[]};postings[w].ids.push(chunkId);postings[w].counts.push(counts[w]);}
+ });
+ const avg=lengths.length?lengths.reduce((a,l)=>a+l,0)/lengths.length:0;
+ return{postings,lengths,averageLength:avg||1.0};
+}
+function bm25Idf(docFreq,docCount){return Math.log(1+(docCount-docFreq+0.5)/(docFreq+0.5));}
+function bm25Scores(bm25,query,k1,b){
+ if(k1===undefined)k1=1.5;if(b===undefined)b=0.75;
+ const scores=new Array(bm25.lengths.length).fill(0);
+ const norm=bm25.lengths.map(len=>k1*(1-b+b*len/bm25.averageLength));
+ for(const word of new Set(bm25Tokenize(query))){
+  const p=bm25.postings[word];if(!p)continue;
+  const weight=bm25Idf(p.ids.length,bm25.lengths.length);
+  p.ids.forEach((id,i)=>{const c=p.counts[i];scores[id]+=weight*c*(k1+1)/(c+norm[id]);});
+ }
+ return scores;
+}
+function bm25SelfTests(){
+ const TEXTS=["Helios Energy builds solar farms.","Aurora Labs builds sensors. Aurora sensors measure soil.","The cooperative grows grapes and olives in the valley."];
+ const out=[];const approx=(a,e)=>Math.abs(a-e)<1e-9;
+ const check=(name,ok)=>out.push((ok?'PASS':'FAIL')+' — '+name);
+ try{
+  check('tokenize',JSON.stringify(bm25Tokenize("Helios Energy's S1!"))===JSON.stringify(["helios","energy","s","s1"]));
+  const b=bm25Build(TEXTS);
+  check('postings aurora',JSON.stringify(b.postings.aurora.ids)==='[1]'&&JSON.stringify(b.postings.aurora.counts)==='[2]');
+  check('postings builds',JSON.stringify(b.postings.builds.ids)==='[0,1]'&&JSON.stringify(b.postings.builds.counts)==='[1,1]');
+  check('lengths [5,8,9]',JSON.stringify(b.lengths)==='[5,8,9]');
+  check('average_length 22/3',approx(b.averageLength,22/3));
+  check('idf rare > shared > 0',bm25Idf(1,3)>bm25Idf(2,3)&&bm25Idf(2,3)>bm25Idf(3,3)&&bm25Idf(3,3)>0);
+  check('idf(1,3) matches formula',approx(bm25Idf(1,3),Math.log(1+2.5/1.5)));
+  const k1=1.5,bb=0.75;
+  const expected=bm25Idf(1,3)*2*(k1+1)/(2+k1*(1-bb+bb*8/(22/3)));
+  check('scores match the formula',approx(bm25Scores(b, "aurora")[1],expected));
+  let s=bm25Scores(b,"solar farms");
+  check('"solar farms" ranks chunk 0 only',s[0]>0&&s[1]===0&&s[2]===0);
+  s=bm25Scores(b,"builds sensors");
+  check('"builds sensors" ranks chunk 1 > chunk 0 > 0',s[1]>s[0]&&s[0]>0);
+  check('unknown words score 0',bm25Scores(b,"quantum").every(x=>x===0));
+  check('empty index returns length 0',bm25Scores(bm25Build([]),"anything").length===0);
+ }catch(e){out.push('FAIL — self-test threw: '+e.message);}
+ return out;
+}
+
+/* ---- Search: BM25 ranking + real model summary, or a real live backend ---- */
+/* SearchResult shape (from api-integration-guide.md):
+ * { primaryContent, supportingMedia: [{id, label, type: 'image'|'video'|'placeholder'}],
+ *   metadata: {source, timestamp, relevance} } */
+function searchDocuments(query,scope){
+ const docs=[];
+ if(scope==='both'||scope==='endpoints'){
+  state.endpoints.forEach(e=>docs.push({
+   text:[e.name,e.url,e.model,e.size,e.size==='small'?'drafting':'review',e.health||'unknown'].join(' '),
+   result:{primaryContent:'Endpoint '+e.name+' — '+e.model+' ('+e.size+', '+(e.health||'unknown')+') at '+e.url,
+    supportingMedia:[{id:0,label:'No media attached to this endpoint record',type:'placeholder'}],
+    metadata:{source:'endpoint registry',timestamp:new Date().toISOString(),relevance:0}}
+  }));
+ }
+ if(scope==='both'||scope==='log'){
+  state.log.forEach((r,i)=>docs.push({
+   text:[r.time,r.profile,r.endpoint,r.model,r.outcome].join(' '),
+   result:{primaryContent:'Usage row '+r.time+' — profile '+r.profile+', '+r.endpoint+' / '+r.model+', '+(r.prompt+r.completion)+' tokens in '+r.ms+' ms, '+r.outcome,
+    supportingMedia:[{id:0,label:'No media attached to this usage row',type:'placeholder'}],
+    metadata:{source:'usage log',timestamp:r.time,relevance:0}}
+  }));
+ }
+ if(!docs.length)return[];
+ const scores=bm25Scores(bm25Build(docs.map(d=>d.text)),query);
+ return docs.map((d,i)=>{d.result.metadata.relevance=+scores[i].toFixed(4);return{doc:d.result,score:scores[i]};})
+  .filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,10);
+}
+async function runSearch(){
+ const q=$('searchInput').value.trim();
+ const scope=$('searchScope').value;
+ const apiUrl=$('searchApiUrl').value.trim();
+ $('searchResults').innerHTML='';$('modelSummary').textContent='';
+ if(!q){$('searchMsg').textContent='Type a search query first.';return;}
+ $('searchMsg').textContent='Searching…';
+ try{
+  let results;
+  if(apiUrl){
+   // Real live search call (api-integration-guide.md step 3): no mock fallback.
+   const resp=await fetch(apiUrl+(apiUrl.indexOf('?')>=0?'&':'?')+'q='+encodeURIComponent(q),{headers:{'Accept':'application/json'}});
+   if(!resp.ok)throw new Error('Live search backend answered HTTP '+resp.status);
+   const data=await resp.json();
+   const list=Array.isArray(data)?data:(data&&data.results?data.results:[data]);
+   results=list.filter(r=>r&&typeof r.primaryContent==='string').map(r=>({
+    primaryContent:r.primaryContent,
+    supportingMedia:Array.isArray(r.supportingMedia)?r.supportingMedia:[],
+    metadata:{source:(r.metadata&&r.metadata.source)||'live search backend',timestamp:(r.metadata&&r.metadata.timestamp)||new Date().toISOString(),relevance:(r.metadata&&typeof r.metadata.relevance==='number')?r.metadata.relevance:0}
+   }));
+   $('searchMsg').textContent=results.length+' result(s) from the live backend at '+apiUrl+'.';
+  }else{
+   const ranked=searchDocuments(q,scope);
+   results=ranked.map(x=>x.doc);
+   $('searchMsg').textContent=ranked.length?('BM25 ranked '+ranked.length+' matching record(s) out of '+(state.endpoints.length+state.log.length)+' searched. Top relevance '+ranked[0].doc.metadata.relevance+'.'):'BM25 found no record sharing a word with "'+q+'". All scores are 0.';
+  }
+  if(!results.length){$('searchResults').innerHTML='<p class="mut">No results. Nothing was invented to fill the gap.</p>';return;}
+  $('searchResults').innerHTML=results.map((r,i)=>'<div class="card" style="margin:8px 0"><b>'+(i+1)+'. '+esc(r.primaryContent)+'</b><br><span class="mut">source: '+esc(r.metadata.source)+' · time: '+esc(r.metadata.timestamp)+' · relevance: '+r.metadata.relevance+' · media: '+(r.supportingMedia.length?r.supportingMedia.map(m=>esc(m.type)+': '+esc(m.label)).join(', '):'none')+'</span></div>').join('');
+  // Real model summary of the top BM25 result — only when a model is actually loaded.
+  if(!apiUrl){
+   if(loadedModel){
+    $('modelSummary').textContent='Asking the loaded real model ('+loadedModel+') to summarise the top result…';
+    try{
+     const r=await runLocalModel(null,{messages:[{role:'user',content:'In one plain sentence, say what this switchboard record is about: '+results[0].primaryContent}],temperature:0.2},()=>{});
+     $('modelSummary').textContent='Model summary of the top result (real inference, '+loadedModel+'): '+r.text;
+    }catch(e){$('modelSummary').textContent='Model summary failed — real error: '+e.message+'. The BM25 ranking above still stands on its own.';}
+   }else{
+    $('modelSummary').textContent='No model loaded, so no summary is shown — a summary will never be invented. Load a model in section 0 to add a real model summary to the top result.';
+   }
+  }
+ }catch(err){
+  $('searchMsg').textContent='Search failed — real error: '+err.message+'. No mock result was substituted.';
+  $('searchResults').innerHTML='<p class="err">Live search failed: '+esc(err.message)+'</p>';
+ }
+}
+$('searchBtn').onclick=runSearch;
+$('searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')runSearch();});
+$('bm25TestBtn').onclick=()=>{
+ const out=bm25SelfTests();
+ const passed=out.filter(l=>l.indexOf('PASS')===0).length;
+ $('searchResults').innerHTML='<pre>'+esc(out.join('\n'))+'\n'+passed+' of '+out.length+' BM25 self-tests passed (same cases as test_bm25.py).</pre>';
+ $('searchMsg').textContent=passed===out.length?'All BM25 self-tests passed.':'Some BM25 self-tests failed — see the list.';
+};
+
+/* ---- CLI simulator: all 9 commands, exit codes 0-4 ---- */
+function parseFlags(args){
+ const flags={},pos=[];
+ for(let i=0;i<args.length;i++){
+  const a=args[i];
+  if(a==='--help'){flags.help=true;}
+  else if(a.startsWith('--')){const k=a.slice(2);const eq=k.indexOf('=');if(eq>=0)flags[k.slice(0,eq)]=k.slice(eq+1);else if(i+1<args.length&&!args[i+1].startsWith('--'))flags[k]=args[++i];else flags[k]=true;}
+  else pos.push(a);
+ }
+ return{flags,pos};
+}
+function cliHelp(cmd){
+ const h={
+ '': 'switchboard — Offline Local Model Switchboard CLI\nCommands: serve, endpoint add|list|remove, profile list|use|show, usage, status\nRun "switchboard <command> --help" for one command.',
+ 'serve':'switchboard serve — start the gateway.\nFlags: --listen (default 127.0.0.1:8080), --config (path), --profile (profile at startup)',
+ 'endpoint add':'switchboard endpoint add — register an endpoint.\nRequired: --name, --url, --model. Optional: --timeout-seconds (default 30)',
+ 'endpoint list':'switchboard endpoint list — show registered endpoints with health. No flags.',
+ 'endpoint remove':'switchboard endpoint remove NAME — delete one endpoint by name.',
+ 'profile list':'switchboard profile list — show profiles and the active one. No flags.',
+ 'profile use':'switchboard profile use NAME — switch the active profile. Exactly one argument, no flags.',
+ 'profile show':'switchboard profile show — print the active profile. No flags.',
+ 'usage':'switchboard usage — print token totals.\nFlags: --days (default 1, range 1 to 90), --model (filter to one model)',
+ 'status':'switchboard status — gateway state, active profile, endpoint health, last 24h token totals. No flags.'
+ };
+ return h[cmd]||('No help for "'+cmd+'".');
+}
 $('cliRun').onclick=()=>{
- const line=$('cliInput').value.trim();const parts=line.split(/\s+/);
+ const line=$('cliInput').value.trim();
+ const parts=line.match(/(?:[^\s"]+|"[^"]*")+/g)||[];
+ const clean=parts.map(p=>p.replace(/^"|"$/g,''));
  const out=[];let code=0;
- if(parts[0]!=='switchboard'){out.push('command not found: '+parts[0]);code=2;}
- else if(parts[1]==='--help'||!parts[1]){out.push('switchboard — Offline Local Model Switchboard CLI\nCommands: serve, endpoint add|list|remove, profile list|use|show, usage, status');}
- else if(parts[1]==='serve'){state.gateway=true;save();render();out.push('Gateway started on '+$('listen').value+' (exit 0)');}
- else if(parts[1]==='endpoint'&&parts[2]==='list'){out.push(state.endpoints.length?state.endpoints.map(e=>e.name+'  '+e.url+'  '+e.model+'  '+(e.health||'unknown')).join('\n'):'No endpoints registered.');}
- else if(parts[1]==='endpoint'&&parts[2]==='add'){out.push('Use the registration form above, or: switchboard endpoint add --name NAME --url URL --model MODEL [--timeout-seconds 30]');}
- else if(parts[1]==='endpoint'&&parts[2]==='remove'){const n=parts[3];const i=state.endpoints.findIndex(e=>e.name===n);if(i<0){out.push('Exit 4: endpoint '+n+' does not exist.');code=4;}else{state.endpoints.splice(i,1);save();render();out.push('Endpoint '+n+' removed. (exit 0)');}}
- else if(parts[1]==='profile'&&parts[2]==='list'){out.push('drafting\nreview\nActive: '+state.active);}
- else if(parts[1]==='profile'&&parts[2]==='use'){const n=parts[3];if(n!=='drafting'&&n!=='review'){out.push('Exit 4: profile '+n+' does not exist.');code=4;}else{state.active=n;save();render();out.push('Active profile: '+n+' (exit 0)');}}
- else if(parts[1]==='profile'&&parts[2]==='show'){out.push('Active profile: '+state.active);}
- else if(parts[1]==='usage'){const d=+$('daysSel').value||1;const t=totals(d);out.push('Usage, last '+d+' day(s): '+t.total+' tokens total\n'+(Object.entries(t.by).map(([m,v])=>m+': '+v).join('\n')||'No completed requests.'));}
- else if(parts[1]==='status'){const t=totals(1);out.push('Gateway: '+(state.gateway?'running':'stopped')+'\nActive profile: '+state.active+'\nEndpoints:\n'+(state.endpoints.map(e=>'  '+e.name+' ('+e.model+') — '+(e.health||'unknown')).join('\n')||'  none')+'\nLast 24h tokens: '+t.total);}
- else{out.push('Exit 2: unknown subcommand: '+(parts[1]||''));code=2;}
+ if(clean[0]!=='switchboard'){out.push('command not found: '+(clean[0]||''));code=2;}
+ else if(clean.length===1||clean[1]==='--help'){out.push(cliHelp(''));}
+ else{
+  const cmd=clean[1];
+  const rest=clean.slice(2);
+  const sub=(cmd==='endpoint'||cmd==='profile')?(rest[0]||''):'';
+  const key=cmd+(sub?' '+sub:'');
+  const {flags,pos}=parseFlags(cmd==='endpoint'||cmd==='profile'?rest.slice(1):rest);
+  if(flags.help){out.push(cliHelp(key));}
+  else if(cmd==='serve'){
+   if(flags.listen&&!/^(\d+\.\d+\.\d+\.\d+|localhost):\d{1,5}$/.test(String(flags.listen))){out.push('Exit 3: invalid listen address: '+flags.listen);code=3;}
+   else if(flags.profile&&flags.profile!=='drafting'&&flags.profile!=='review'){out.push('Exit 4: profile '+flags.profile+' does not exist.');code=4;}
+   else{if(flags.listen)$('listen').value=String(flags.listen);if(flags.profile)state.active=flags.profile;state.gateway=true;save();render();out.push('Gateway started on '+$('listen').value+' (exit 0)');}
+  }
+  else if(cmd==='endpoint'&&sub==='list'){out.push(state.endpoints.length?state.endpoints.map(e=>e.name+'  '+e.url+'  '+e.model+'  '+(e.health||'unknown')).join('\n'):'No endpoints registered.');}
+  else if(cmd==='endpoint'&&sub==='add'){
+   const t=flags['timeout-seconds']?parseInt(flags['timeout-seconds'],10):30;
+   if(!flags.name||!flags.url||!flags.model){out.push('Exit 2: endpoint add requires --name, --url and --model.');code=2;}
+   else if(isNaN(t)||t<1||t>300){out.push('Exit 1: --timeout-seconds must be 1 to 300.');code=1;}
+   else{const r=addEndpoint(String(flags.name),String(flags.url),String(flags.model),'small',t);out.push(r.msg);code=r.ok?0:(r.msg.indexOf('Exit 3')===0?3:1);}
+  }
+  else if(cmd==='endpoint'&&sub==='remove'){
+   const n=pos[0];if(!n){out.push('Exit 2: endpoint remove needs an endpoint name.');code=2;}
+   else{const i=state.endpoints.findIndex(e=>e.name===n);if(i<0){out.push('Exit 4: endpoint '+n+' does not exist.');code=4;}else{state.endpoints.splice(i,1);save();render();out.push('Endpoint '+n+' removed. (exit 0)');}}
+  }
+  else if(cmd==='profile'&&sub==='list'){out.push('drafting\nreview\nActive: '+state.active);}
+  else if(cmd==='profile'&&sub==='use'){
+   const n=pos[0];if(!n||pos.length>1){out.push('Exit 2: profile use takes exactly one profile name.');code=2;}
+   else if(n!=='drafting'&&n!=='review'){out.push('Exit 4: profile '+n+' does not exist.');code=4;}
+   else{state.active=n;save();render();out.push('Active profile: '+n+' (exit 0)');}
+  }
+  else if(cmd==='profile'&&sub==='show'){out.push('Active profile: '+state.active);}
+  else if(cmd==='usage'){
+   const d=flags.days?parseInt(flags.days,10):1;
+   if(isNaN(d)||d<1||d>90){out.push('Exit 1: --days must be 1 to 90.');code=1;}
+   else{const t=totals(d,flags.model?String(flags.model):null);out.push('Usage, last '+d+' day(s)'+(flags.model?' (model '+flags.model+')':'')+': '+t.total+' tokens total\n'+(Object.entries(t.by).map(([m,v])=>m+': '+v).join('\n')||'No completed requests.'));}
+  }
+  else if(cmd==='status'){const t=totals(1);out.push('Gateway: '+(state.gateway?'running':'stopped')+'\nActive profile: '+state.active+'\nEndpoints:\n'+(state.endpoints.map(e=>'  '+e.name+' ('+e.model+') — '+(e.health||'unknown')).join('\n')||'  none')+'\nLast 24h tokens: '+t.total);}
+  else{out.push('Exit 2: unknown subcommand: '+cmd);code=2;}
+ }
  $('cliOut').textContent='exit '+code+'\n'+out.join('\n');
 };
+$('cliInput').addEventListener('keydown',e=>{if(e.key==='Enter')$('cliRun').click();});
 render();
 </script></body></html>
