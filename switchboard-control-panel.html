@@ -25,12 +25,12 @@ progress{width:100%;height:10px}
 <div class="banner"><b>Read first — what this is and is not:</b> the Go command-line binary itself <b>cannot run in a browser</b>, so this page is <b>not</b> the Go binary. It is a working control panel that demonstrates the real switchboard logic: endpoint registration, profile routing, request validation, real forwarding attempts, and local logging. The spec lists a graphical user interface or web dashboard as out of scope, so this panel is a demonstration only, not part of the shipped command-line tool. <b>Every reply on this page comes from one of two real paths only:</b> (1) a real fetch to a registered local model server address, or (2) a real model running in this browser tab (WebLLM, Transformers.js version 3, or a GGUF file through wllama). If no model is loaded and no server answers, the panel reports the failure and <b>never invents a reply</b>. There is no test stub and no canned answer anywhere on this page. <b>Search (section 6)</b> ranks endpoints and usage-log rows with real BM25 (Robertson and Zaragoza, k1 1.5, b 0.75) and, when a local model is loaded, adds a one-sentence summary from that real model — never a canned answer, never a mock result.</div>
 
 <div class="card"><h2>0 · Local model — the real inference engine in this tab</h2>
-<p class="mut">Load one model before sending a request to a built-in <code>webllm://</code> endpoint. First load downloads the weights (about 350 megabytes for the 0.5B model, about 1 gigabyte for the 1.5B model), then the browser caches them. Inference runs on your device; your prompt is not sent to any cloud service by this page.</p>
+<p class="mut">This panel loads a real local model on its own when it opens — Transformers.js Qwen2.5-0.5B-Instruct first — so the built-in <code>webllm://</code> endpoints can answer without a click. First load downloads the weights (about 350 megabytes for the 0.5B model, about 1 gigabyte for the 1.5B model), then the browser caches them. Inference runs on your device; your prompt is not sent to any cloud service by this page.</p>
 <div class="row">
 <label style="flex:1">Engine
 <select id="engineSel">
+<option value="transformers" selected>Transformers.js 3.5.2 — WebGPU / WebAssembly, ONNX model</option>
 <option value="webllm">WebLLM 0.2.86 — WebGPU, OpenAI-compatible chat completions</option>
-<option value="transformers">Transformers.js 3.5.2 — WebGPU / WebAssembly, ONNX model</option>
 <option value="wllama">wllama 3.13.0 — WebAssembly llama.cpp, drop-in GGUF file</option>
 </select></label>
 <label style="flex:1">Model
@@ -44,9 +44,9 @@ progress{width:100%;height:10px}
 <label>…or GGUF file address <input id="ggufUrl" placeholder="https://huggingface.co/owner/repo/resolve/main/model.gguf"></label>
 <p class="mut">wllama loads a real GGUF file with llama.cpp compiled to WebAssembly. Paste a real file address or pick a file from your device. No default model address is filled in — an invented address would fail anyway.</p>
 </div>
-<div class="row"><button id="loadModelBtn" class="ok">Load local model</button><button id="unloadModelBtn" class="ghost">Unload model</button><span id="modelState" class="pill unknown">NO MODEL LOADED</span><span id="webgpuState" class="mut"></span></div>
-<progress id="loadProg" value="0" max="1" style="display:none"></progress>
-<p id="loadMsg" class="mut">WebLLM needs WebGPU. Transformers.js version 3 falls back to WebAssembly on the central processor when WebGPU is missing. wllama needs WebAssembly only, but version 3 needs the Memory64 proposal, so it may fail on Safari and iOS.</p>
+<div class="row"><button id="loadModelBtn" class="ok">Load local model</button><button id="unloadModelBtn" class="ghost">Unload model</button><span id="modelState" class="pill unknown">LOADING REAL LOCAL MODEL…</span><span id="webgpuState" class="mut"></span></div>
+<progress id="loadProg" value="0" max="1" style="display:block"></progress>
+<p id="loadMsg" class="mut">Loading real local model… Starting Transformers.js (Qwen2.5-0.5B-Instruct) on open. First load downloads the weights, then the browser caches them.</p>
 <p class="mut">Verified libraries: <code>@mlc-ai/web-llm@0.2.86</code> (<code>CreateMLCEngine</code>, <code>engine.chat.completions.create</code>), <code>@huggingface/transformers@3.5.2</code> (<code>pipeline("text-generation", "onnx-community/Qwen2.5-0.5B-Instruct", {device:"webgpu", dtype:"q4f16"})</code>), <code>@wllama/wllama@3.13.0</code> (<code>new Wllama(paths)</code>, <code>loadModel(files)</code>, <code>loadModelFromUrl(url)</code>, <code>createChatCompletion</code>).</p>
 </div>
 
@@ -85,7 +85,7 @@ progress{width:100%;height:10px}
 }</textarea></label>
 <div class="row"><button id="sendBtn">Validate and route request</button><button id="validateBtn" class="ghost">Validate only (no send)</button><span id="reqMsg"></span></div>
 <p class="mut">Limits enforced here: body over 10 megabytes → HTTP 413 · missing <code>model</code> or bad JSON → HTTP 400 · no healthy endpoint → HTTP 503 · endpoint unreachable → HTTP 502 · more than 100 requests at once → HTTP 429. Replies stream in live from the real model when the built-in local endpoint serves the request.</p>
-<pre id="respOut">No request sent yet. Load a local model in section 0 first, or register a real local server address in section 1.</pre></div>
+<pre id="respOut">No request sent yet. The real local model is loading in section 0 — requests will route once it is ready, or register a real local server address in section 1.</pre></div>
 
 <div class="grid">
 <div class="card"><h2>4 · Local usage log</h2>
@@ -219,52 +219,80 @@ $('engineSel').onchange=()=>{
  $('modelSel').style.display=k==='wllama'?'none':'block';
 };
 function setModelState(txt,cls){$('modelState').textContent=txt;$('modelState').className='pill '+cls;}
-$('loadModelBtn').onclick=async()=>{
- const kind=$('engineSel').value;
+/* Auto-load on open: Transformers.js Qwen2.5-0.5B-Instruct first (smallest reliable
+ * path — falls back to WebAssembly when WebGPU is missing), then WebLLM, then
+ * wllama/GGUF only when a GGUF file or address is supplied. Never invents a reply. */
+let modelLoading=true,modelLoadErrors=[];
+function resetModelEngine(){engine=null;transformerPipe=null;wllamaInst=null;engineKind=null;loadedModel=null;}
+async function loadOneEngine(kind){
+ const prog=$('loadProg');
+ if(kind==='webllm'){
+  const modelId=$('modelSel').value;
+  const webllm=await import('https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.86/+esm');
+  engine=await webllm.CreateMLCEngine(modelId,{initProgressCallback:p=>{prog.value=p.progress||0;$('loadMsg').textContent=p.text||('Loading '+modelId+'…');}});
+  engineKind='webllm';loadedModel=modelId;
+ }else if(kind==='transformers'){
+  const modelId=$('modelSel').value.replace('-q4f16_1-MLC','');
+  const tf=await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2/dist/transformers.min.js');
+  const device=('gpu' in navigator)?'webgpu':'wasm';
+  transformerPipe=await tf.pipeline('text-generation','onnx-community/'+modelId,{device, dtype:'q4f16', progress_callback:p=>{if(p&&p.progress!=null){prog.value=p.progress;$('loadMsg').textContent=(p.status||'Loading')+' '+(p.file||'');}}});
+  engineKind='transformers';loadedModel=$('modelSel').value;
+ }else{
+  const wl=await import('https://cdn.jsdelivr.net/npm/@wllama/wllama@3.13.0/+esm');
+  const base='https://cdn.jsdelivr.net/npm/@wllama/wllama@3.13.0/esm/';
+  wllamaInst=new wl.Wllama({'single-thread/wllama.wasm':base+'single-thread/wllama.wasm','multi-thread/wllama.wasm':base+'multi-thread/wllama.wasm'});
+  const file=$('ggufFile').files[0],url=$('ggufUrl').value.trim();
+  const cb=p=>{if(p&&p.loaded!=null&&p.total){prog.value=p.loaded/p.total;$('loadMsg').textContent='Loading GGUF: '+Math.round(100*p.loaded/p.total)+'%';}};
+  if(file){await wllamaInst.loadModel([file],{progressCallback:cb,n_ctx:2048});loadedModel='GGUF: '+file.name;}
+  else if(url){await wllamaInst.loadModelFromUrl(url,{progressCallback:cb,n_ctx:2048});loadedModel='GGUF: '+url;}
+  else throw new Error('Pick a GGUF file or paste a GGUF file address first.');
+  engineKind='wllama';
+ }
+}
+async function loadModelWithFallback(preferredKind){
+ if(modelLoading&&loadedModel)return true;
+ modelLoading=true;modelLoadErrors=[];resetModelEngine();
  const prog=$('loadProg');prog.style.display='block';prog.value=0;
- $('loadMsg').textContent='Loading — this downloads the model weights on first run. Please wait.';
- $('loadModelBtn').disabled=true;
- try{
-  if(kind==='webllm'){
-   const modelId=$('modelSel').value;
-   const webllm=await import('https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.86/+esm');
-   engine=await webllm.CreateMLCEngine(modelId,{initProgressCallback:p=>{prog.value=p.progress||0;$('loadMsg').textContent=p.text||('Loading '+modelId+'…');}});
-   engineKind='webllm';loadedModel=modelId;
-  }else if(kind==='transformers'){
-   const modelId=$('modelSel').value.replace('-q4f16_1-MLC','');
-   const tf=await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2/dist/transformers.min.js');
-   const device=('gpu' in navigator)?'webgpu':'wasm';
-   transformerPipe=await tf.pipeline('text-generation','onnx-community/'+modelId,{device, dtype:'q4f16', progress_callback:p=>{if(p&&p.progress!=null){prog.value=p.progress;$('loadMsg').textContent=(p.status||'Loading')+' '+(p.file||'');}}});
-   engineKind='transformers';loadedModel=$('modelSel').value;
-  }else{
-   const wl=await import('https://cdn.jsdelivr.net/npm/@wllama/wllama@3.13.0/+esm');
-   const base='https://cdn.jsdelivr.net/npm/@wllama/wllama@3.13.0/esm/';
-   wllamaInst=new wl.Wllama({'single-thread/wllama.wasm':base+'single-thread/wllama.wasm','multi-thread/wllama.wasm':base+'multi-thread/wllama.wasm'});
-   const file=$('ggufFile').files[0],url=$('ggufUrl').value.trim();
-   const cb=p=>{if(p&&p.loaded!=null&&p.total){prog.value=p.loaded/p.total;$('loadMsg').textContent='Loading GGUF: '+Math.round(100*p.loaded/p.total)+'%';}};
-   if(file){await wllamaInst.loadModel([file],{progressCallback:cb,n_ctx:2048});loadedModel='GGUF: '+file.name;}
-   else if(url){await wllamaInst.loadModelFromUrl(url,{progressCallback:cb,n_ctx:2048});loadedModel='GGUF: '+url;}
-   else throw new Error('Pick a GGUF file or paste a GGUF file address first.');
-   engineKind='wllama';
+ $('loadModelBtn').disabled=true;$('loadModelBtn').textContent='Load local model';
+ setModelState('LOADING REAL LOCAL MODEL…','unknown');
+ // Preferred engine first, then the other real engines. GGUF is last and only
+ // attempted when a file or address is supplied — there is no invented default.
+ const order=[preferredKind,'transformers','webllm','wllama'].filter((k,i,a)=>a.indexOf(k)===i);
+ for(const kind of order){
+  if(kind==='wllama'&&!$('ggufFile').files[0]&&!$('ggufUrl').value.trim()){modelLoadErrors.push('wllama: skipped — no GGUF file or address supplied.');continue;}
+  $('engineSel').value=kind;$('ggufBox').style.display=kind==='wllama'?'block':'none';$('modelSel').style.display=kind==='wllama'?'none':'block';
+  $('loadMsg').textContent='Loading real local model… Trying '+kind+' ('+$('modelSel').value+') — this downloads the model weights on first run. Please wait.';
+  try{
+   await loadOneEngine(kind);
+   setModelState('LOADED: '+loadedModel,'healthy');
+   $('loadMsg').textContent='Model loaded and ready: '+loadedModel+' ('+engineKind+'). Replies now come from this real model run.';
+   for(const e of state.endpoints)if(e.url==='webllm://local'){e.health=localHealth(e);e.probed=new Date().toLocaleTimeString();}
+   save();render();modelLoading=false;
+   $('loadModelBtn').disabled=false;prog.style.display='none';
+   return true;
+  }catch(err){
+   resetModelEngine();
+   modelLoadErrors.push(kind+': '+(err&&err.message?err.message:String(err)));
+   $('loadMsg').textContent='Loading real local model… '+kind+' failed ('+(err&&err.message?err.message:String(err))+'). Trying the next engine…';
   }
-  setModelState('LOADED: '+loadedModel,'healthy');
-  $('loadMsg').textContent='Model loaded and ready: '+loadedModel+' ('+engineKind+'). Replies now come from this real model run.';
-  for(const e of state.endpoints)if(e.url==='webllm://local'){e.health=localHealth(e);e.probed=new Date().toLocaleTimeString();}
-  save();render();
- }catch(err){
-  engine=null;transformerPipe=null;wllamaInst=null;engineKind=null;loadedModel=null;
-  setModelState('LOAD FAILED','unhealthy');
-  $('loadMsg').textContent='Model failed to load — no reply will be invented. Real error: '+(err&&err.message?err.message:String(err));
-  for(const e of state.endpoints)if(e.url==='webllm://local'){e.health=localHealth(e);}
-  render();
- }finally{$('loadModelBtn').disabled=false;prog.style.display='none';}
-};
+ }
+ setModelState('LOAD FAILED — RETRY','unhealthy');
+ $('loadMsg').textContent='Model failed to load after trying every engine. No reply will be invented. Real errors: '+modelLoadErrors.join(' | ');
+ $('loadModelBtn').textContent='Retry loading model';
+ for(const e of state.endpoints)if(e.url==='webllm://local'){e.health=localHealth(e);}
+ render();modelLoading=false;
+ $('loadModelBtn').disabled=false;prog.style.display='none';
+ return false;
+}
+$('loadModelBtn').onclick=async()=>{if(modelLoading)return;await loadModelWithFallback($('engineSel').value);};
+// Auto-load on open — no click needed. The Load button stays as Retry if this fails.
+loadModelWithFallback('transformers');
 $('unloadModelBtn').onclick=async()=>{
  try{if(engine&&engine.unload)await engine.unload();}catch(e){}
  try{if(transformerPipe&&transformerPipe.dispose)await transformerPipe.dispose();}catch(e){}
  try{if(wllamaInst&&wllamaInst.exit)await wllamaInst.exit();}catch(e){}
- engine=null;transformerPipe=null;wllamaInst=null;engineKind=null;loadedModel=null;
- setModelState('NO MODEL LOADED','unknown');$('loadMsg').textContent='Model unloaded.';
+ engine=null;transformerPipe=null;wllamaInst=null;engineKind=null;loadedModel=null;modelLoading=false;
+ setModelState('MODEL UNLOADED','unknown');$('loadMsg').textContent='Model unloaded. Press Load local model to load it again.';$('loadModelBtn').textContent='Load local model';
  for(const e of state.endpoints)if(e.url==='webllm://local'){e.health=localHealth(e);}render();
 };
 
@@ -310,8 +338,9 @@ async function sendReq(validateOnly){
  if(state.inflight>=100){$('reqMsg').textContent='HTTP 429: over 100 concurrent requests.';return;}
  const ep=routeFor(state.active);
  if(!ep){$('reqMsg').textContent='HTTP 503: no endpoint for profile '+state.active+'.';$('reqMsg').className='err';$('respOut').textContent='HTTP 503: no endpoint registered for profile '+state.active+'. Register a '+(state.active==='drafting'?'small':'large')+' endpoint first.';return;}
+ if(ep.url==='webllm://local'&&modelLoading){$('reqMsg').textContent='Model still loading… Wait for the real local model in section 0 to finish loading, then send again. No reply will be invented while it loads.';$('reqMsg').className='err';$('respOut').textContent='Model still loading… Wait for the real local model in section 0 to finish loading, then send again.';return;}
  await probe(ep);
- if(ep.health!=='healthy'){$('reqMsg').textContent='HTTP 503: endpoint '+ep.name+' is not healthy — routing refused.';$('reqMsg').className='err';$('respOut').textContent='HTTP 503: endpoint '+ep.name+' is not healthy. '+(ep.url==='webllm://local'?'Load the matching local model in section 0 first.':'Probe it in section 1.');return;}
+ if(ep.health!=='healthy'){$('reqMsg').textContent='HTTP 503: endpoint '+ep.name+' is not healthy — routing refused.';$('reqMsg').className='err';$('respOut').textContent='HTTP 503: endpoint '+ep.name+' is not healthy. '+(ep.url==='webllm://local'?'Wait for the local model in section 0 to finish loading, or press Retry loading model if it failed.':'Probe it in section 1.');return;}
  state.inflight++;const t0=performance.now();
  try{
   let data,usage,estimated=false;
@@ -459,8 +488,10 @@ async function runSearch(){
      const r=await runLocalModel(null,{messages:[{role:'user',content:'In one plain sentence, say what this switchboard record is about: '+results[0].primaryContent}],temperature:0.2},()=>{});
      $('modelSummary').textContent='Model summary of the top result (real inference, '+loadedModel+'): '+r.text;
     }catch(e){$('modelSummary').textContent='Model summary failed — real error: '+e.message+'. The BM25 ranking above still stands on its own.';}
+   }else if(modelLoading){
+    $('modelSummary').textContent='Model still loading… The BM25 ranking above stands on its own; a real model summary will appear once loading finishes.';
    }else{
-    $('modelSummary').textContent='No model loaded, so no summary is shown — a summary will never be invented. Load a model in section 0 to add a real model summary to the top result.';
+    $('modelSummary').textContent='Model summary unavailable — the local model failed to load or was unloaded, so no summary is shown and a summary will never be invented. Press Retry loading model in section 0 to add a real model summary to the top result.';
    }
   }
  }catch(err){
