@@ -22,7 +22,7 @@ Every rule in `AGENTS.md`, expanded with the reason it exists for this project a
 
 **Rule:** Use only the libraries named in PROJECT-SPEC.yaml and ARCHITECTURE.md. If a needed API or package is not listed there, stop and ask instead of inventing it.
 
-**Why:** An invented library or method compiles the same as a real one in the agent's head; it only fails when a human runs the code.
+**Why:** An invented library or method compiles the same as one that exists in the agent's head; it only fails when a human runs the code.
 
 **Enforcement:** The phase reviewer checks this rule against the phase's delivered files and test output before signing the Pass / Fail table. A violation fails the phase regardless of other criteria, and the phase is redone, not patched over.
 

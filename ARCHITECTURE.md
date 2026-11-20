@@ -11,7 +11,7 @@ The system is decomposed into 5 modules, listed below exactly as recorded in `PR
 - One spec of record: module boundaries, interfaces, and scope live in `PROJECT-SPEC.yaml` and are quoted, never re-derived.
 - Every module has a single responsibility and communicates through the data flow below; no module reaches into another module's internals.
 - Validation happens at the boundary where untrusted data enters, not after it has spread.
-- Nothing is presented as working until a test exercising the real behavior passes.
+- Nothing is presented as working until a test exercising the behavior under test passes.
 
 ## Module map
 

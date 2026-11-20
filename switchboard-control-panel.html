@@ -21,11 +21,11 @@ code,pre{background:#0f172a;border:1px solid #334155;border-radius:6px;padding:2
 progress{width:100%;height:10px}
 </style></head><body><div class="wrap">
 <h1>Offline Local Model Switchboard — Control Panel</h1>
-<p class="mut">Go 1 · Cobra 1 · Viper 1 · SQLite 3 (in the real tool) · Gateway <code>127.0.0.1:8080</code> · OpenAI-compatible <code>POST /v1/chat/completions</code></p>
-<div class="banner"><b>Read first — what this is and is not:</b> the Go command-line binary itself <b>cannot run in a browser</b>, so this page is <b>not</b> the Go binary. It is a working control panel that demonstrates the real switchboard logic: endpoint registration, profile routing, request validation, real forwarding attempts, and local logging. The spec lists a graphical user interface or web dashboard as out of scope, so this panel is a demonstration only, not part of the shipped command-line tool. <b>Every reply on this page comes from one of two real paths only:</b> (1) a real fetch to a registered local model server address, or (2) a real model running in this browser tab (WebLLM, Transformers.js version 3, or a GGUF file through wllama). If no model is loaded and no server answers, the panel reports the failure and <b>never invents a reply</b>. There is no test stub and no canned answer anywhere on this page. <b>Search (section 6)</b> ranks endpoints and usage-log rows with real BM25 (Robertson and Zaragoza, k1 1.5, b 0.75) and, when a local model is loaded, adds a one-sentence summary from that real model — never a canned answer, never a mock result.</div>
+<p class="mut">Go 1 · Cobra 1 · Viper 1 · SQLite 3 (in the command-line tool) · Gateway <code>127.0.0.1:8080</code> · OpenAI-compatible <code>POST /v1/chat/completions</code></p>
+<div class="banner"><b>Read first — what this is and is not:</b> the Go command-line binary itself <b>cannot run in a browser</b>, so this page is <b>not</b> the Go binary. It is a control panel that runs the switchboard logic: endpoint registration, profile routing, request validation, forwarding attempts, and local logging. The spec lists a graphical user interface or web dashboard as out of scope, so this panel is a demonstration only, not part of the shipped command-line tool. <b>Every reply on this page comes from one of two paths only:</b> (1) a fetch to a registered local model server address, or (2) a model running in this browser tab (WebLLM, Transformers.js version 3, or a GGUF file through wllama). If no model is loaded and no server answers, the panel reports the failure and does not invent a reply. <b>Search (section 6)</b> ranks endpoints and usage-log rows with BM25 (Robertson and Zaragoza, k1 1.5, b 0.75) and, when a local model is loaded, adds a one-sentence summary from that model.</div>
 
-<div class="card"><h2>0 · Local model — the real inference engine in this tab</h2>
-<p class="mut">This panel loads a real local model on its own when it opens — Transformers.js Qwen2.5-0.5B-Instruct first — so the built-in <code>webllm://</code> endpoints can answer without a click. First load downloads the weights (about 350 megabytes for the 0.5B model, about 1 gigabyte for the 1.5B model), then the browser caches them. Inference runs on your device; your prompt is not sent to any cloud service by this page.</p>
+<div class="card"><h2>0 · Local model — the inference engine in this tab</h2>
+<p class="mut">This panel loads a local model on its own when it opens — Transformers.js Qwen2.5-0.5B-Instruct first — so the built-in <code>webllm://</code> endpoints can answer without a click. First load downloads the weights (about 350 megabytes for the 0.5B model, about 1 gigabyte for the 1.5B model), then the browser caches them. Inference runs on your device; your prompt is not sent to any cloud service by this page.</p>
 <div class="row">
 <label style="flex:1">Engine
 <select id="engineSel">
@@ -42,12 +42,12 @@ progress{width:100%;height:10px}
 <div id="ggufBox" style="display:none">
 <label>GGUF file (from your device) <input id="ggufFile" type="file" accept=".gguf"></label>
 <label>…or GGUF file address <input id="ggufUrl" placeholder="https://huggingface.co/owner/repo/resolve/main/model.gguf"></label>
-<p class="mut">wllama loads a real GGUF file with llama.cpp compiled to WebAssembly. Paste a real file address or pick a file from your device. No default model address is filled in — an invented address would fail anyway.</p>
+<p class="mut">wllama loads a GGUF file with llama.cpp compiled to WebAssembly. Paste a file address or pick a file from your device. No default model address is filled in — an invented address would fail anyway.</p>
 </div>
-<div class="row"><button id="loadModelBtn" class="ok">Load local model</button><button id="unloadModelBtn" class="ghost">Unload model</button><span id="modelState" class="pill unknown">LOADING REAL LOCAL MODEL…</span><span id="webgpuState" class="mut"></span></div>
+<div class="row"><button id="loadModelBtn" class="ok">Load local model</button><button id="unloadModelBtn" class="ghost">Unload model</button><span id="modelState" class="pill unknown">LOADING LOCAL MODEL…</span><span id="webgpuState" class="mut"></span></div>
 <progress id="loadProg" value="0" max="1" style="display:block"></progress>
-<p id="loadMsg" class="mut">Loading real local model… Starting Transformers.js (Qwen2.5-0.5B-Instruct) on open. First load downloads the weights, then the browser caches them.</p>
-<p class="mut">Verified libraries: <code>@mlc-ai/web-llm@0.2.86</code> (<code>CreateMLCEngine</code>, <code>engine.chat.completions.create</code>), <code>@huggingface/transformers@3.5.2</code> (<code>pipeline("text-generation", "onnx-community/Qwen2.5-0.5B-Instruct", {device:"webgpu", dtype:"q4f16"})</code>), <code>@wllama/wllama@3.13.0</code> (<code>new Wllama(paths)</code>, <code>loadModel(files)</code>, <code>loadModelFromUrl(url)</code>, <code>createChatCompletion</code>).</p>
+<p id="loadMsg" class="mut">Loading local model… Starting Transformers.js (Qwen2.5-0.5B-Instruct) on open. First load downloads the weights, then the browser caches them.</p>
+<p class="mut">Verified libraries: <code>@mlc-ai/web-llm@0.2.86</code> (<code>CreateMLCEngine</code>, <code>engine.chat.completions.create</code>), <code>@huggingface/transformers@3.5.2</code> (<code>pipeline("text-generation", "onnx-community/Qwen2.5-0.5B-Instruct", {device:"webgpu", dtype:"q4f16"})</code>), <code>@wllama/wllama@3.13.0</code> (<code>new Wllama(WasmFromCDN)</code> from <code>esm/wasm-from-cdn.js</code>, <code>loadModel(files)</code>, <code>loadModelFromUrl(url)</code>, <code>createChatCompletion</code>).</p>
 </div>
 
 <div class="card"><h2>Gateway status</h2>
@@ -64,9 +64,9 @@ progress{width:100%;height:10px}
 <label>Size / role <select id="epSize"><option value="small">small — drafting</option><option value="large">large — review</option></select></label>
 <label>Timeout seconds <input id="epTimeout" type="number" value="30" min="1" max="300"></label>
 <button id="addEp">Register endpoint</button><span id="epMsg" class="mut"></span>
-<p class="mut">Two built-in endpoints are pre-registered: <code>local-webllm</code> (small, drafting) and <code>local-webllm-review</code> (large, review). Both point at the local model loaded in section 0 — they answer only after that model is loaded. Any other address must start with <code>http://</code> or <code>https://</code> and is probed for real with a fetch; a failed probe means unhealthy, not healthy. Bad input is refused, never silently fixed.</p>
+<p class="mut">Two built-in endpoints are pre-registered: <code>local-webllm</code> (small, drafting) and <code>local-webllm-review</code> (large, review). Both point at the local model loaded in section 0 — they answer only after that model is loaded. Any other address must start with <code>http://</code> or <code>https://</code> and is probed with a fetch; a failed probe means unhealthy, not healthy. Bad input is refused, never silently fixed.</p>
 <h3>Registered endpoints</h3><div id="epList"></div>
-<button id="probeBtn" class="ghost">Probe health now (30-second probe in the real tool)</button>
+<button id="probeBtn" class="ghost">Probe health now (30-second probe in the command-line tool)</button>
 <button id="restoreBtn" class="ghost">Restore built-in local endpoints</button></div>
 
 <div class="card"><h2>2 · Routing profiles</h2>
@@ -77,15 +77,15 @@ progress{width:100%;height:10px}
 <h3>Profile routing map</h3><pre id="routeMap"></pre></div>
 </div>
 
-<div class="card"><h2>3 · Send a chat request (real validation + real routing)</h2>
+<div class="card"><h2>3 · Send a chat request (validation + routing)</h2>
 <label>Request body — OpenAI-compatible JSON <textarea id="reqBody">{
   "model": "Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
   "messages": [{"role": "user", "content": "Write one sentence about a husky."}],
   "temperature": 0.7
 }</textarea></label>
 <div class="row"><button id="sendBtn">Validate and route request</button><button id="validateBtn" class="ghost">Validate only (no send)</button><span id="reqMsg"></span></div>
-<p class="mut">Limits enforced here: body over 10 megabytes → HTTP 413 · missing <code>model</code> or bad JSON → HTTP 400 · no healthy endpoint → HTTP 503 · endpoint unreachable → HTTP 502 · more than 100 requests at once → HTTP 429. Replies stream in live from the real model when the built-in local endpoint serves the request.</p>
-<pre id="respOut">No request sent yet. The real local model is loading in section 0 — requests will route once it is ready, or register a real local server address in section 1.</pre></div>
+<p class="mut">Limits enforced here: body over 10 megabytes → HTTP 413 · missing <code>model</code> or bad JSON → HTTP 400 · no healthy endpoint → HTTP 503 · endpoint unreachable → HTTP 502 · more than 100 requests at once → HTTP 429. Replies stream in from the loaded model when the built-in local endpoint serves the request.</p>
+<pre id="respOut">No request sent yet. The local model is loading in section 0 — requests will route once it is ready, or register a local server address in section 1.</pre></div>
 
 <div class="grid">
 <div class="card"><h2>4 · Local usage log</h2>
@@ -93,9 +93,9 @@ progress{width:100%;height:10px}
 <button id="totalsBtn" class="ghost">Show totals</button><button id="exportBtn" class="ghost">Export log (JSON)</button><button id="clearBtn" class="danger">Clear log</button></div>
 <pre id="totalsOut">No completed requests logged yet.</pre>
 <div style="max-height:260px;overflow:auto"><table><thead><tr><th>Time</th><th>Profile</th><th>Endpoint / model</th><th>Tokens</th><th>ms</th><th>Outcome</th></tr></thead><tbody id="logBody"><tr><td colspan="6" class="mut">No rows yet. Completed requests only — rejected requests write no row.</td></tr></tbody></table></div>
-<p class="mut">In the real tool this log lives in local SQLite 3 only, never sent anywhere. Here it lives in the widget state on this device only. Token counts come from the model or server response; for Transformers.js and wllama the prompt count is a word-count estimate and is labelled estimated in the log row.</p></div>
+<p class="mut">In the command-line tool, this log lives in local SQLite 3 only, never sent anywhere. Here it lives only in this page's memory on this device. Token counts come from the model or server response; for Transformers.js and wllama the prompt count is a word-count estimate and is labelled estimated in the log row.</p></div>
 
-<div class="card"><h2>5 · Command-line simulator — try the real commands</h2>
+<div class="card"><h2>5 · Command-line simulator — try the commands</h2>
 <label>Command <input id="cliInput" value="switchboard status"></label>
 <button id="cliRun">Run command</button><span class="mut">Exit code shown with the output.</span>
 <pre id="cliOut">Type a command, for example:
@@ -107,15 +107,15 @@ switchboard usage --model Qwen2.5-0.5B-Instruct-q4f16_1-MLC</pre>
 <p class="mut">All 9 commands are simulated against the same live state as the panels above: serve, endpoint add, endpoint list, endpoint remove, profile list, profile use, profile show, usage, status. Exit codes 0 to 4, per contracts/CLI-REFERENCE.md.</p></div>
 </div>
 
-<div class="card"><h2>6 · Search endpoints and usage log — real BM25 ranking + real model summary</h2>
-<p class="mut">Ranking is real BM25 (Robertson and Zaragoza: k1 1.5, b 0.75, Lucene-style inverse document frequency that is never negative), run locally over the endpoint registry and the usage log in section 4. There is no mock search here: the old <code>of(mockResult)</code> pattern from the api-integration-guide never existed in this panel, and this section does not add one. If you paste a live search backend address below, search calls it for real with a GET request and expects a <code>SearchResult</code> back; a failed call is reported, never silently replaced with a canned result. With no backend address, the real local search is BM25 ranking plus, when a model is loaded in section 0, a one-sentence summary from that real model — BM25 alone is never presented as an answer, and the model is never asked to rank on its own. Results follow the <code>SearchResult</code> shape: <code>primaryContent</code>, <code>supportingMedia</code> (image, video, or placeholder), <code>metadata {source, timestamp, relevance}</code>.</p>
+<div class="card"><h2>6 · Search endpoints and usage log — BM25 ranking + model summary</h2>
+<p class="mut">Ranking is BM25 (Robertson and Zaragoza: k1 1.5, b 0.75, Lucene-style inverse document frequency that is never negative), run locally over the endpoint registry and the usage log in section 4. If you paste a live search backend address below, search calls it with a GET request and expects a <code>SearchResult</code> back; a failed call is reported and nothing is substituted for it. With no backend address, search is BM25 ranking plus, when a model is loaded in section 0, a one-sentence summary from that model. BM25 ranks records; it does not write the summary, and the model is not asked to rank on its own. Results follow the <code>SearchResult</code> shape: <code>primaryContent</code>, <code>supportingMedia</code> (image, video, or placeholder), <code>metadata {source, timestamp, relevance}</code>.</p>
 <label>Search <input id="searchInput" placeholder="e.g. drafting healthy, or a model name"></label>
 <div class="row"><label style="flex:1">Scope <select id="searchScope"><option value="both">Endpoints + usage log</option><option value="endpoints">Endpoints only</option><option value="log">Usage log only</option></select></label>
 <label style="flex:2">Live search backend address (optional) <input id="searchApiUrl" placeholder="https://api.your-backend.com/search"></label></div>
 <div class="row"><button id="searchBtn">Search</button><button id="bm25TestBtn" class="ghost">Run BM25 self-tests (same cases as test_bm25.py)</button><span id="searchMsg" class="mut"></span></div>
 <p id="modelSummary" class="mut"></p>
 <div id="searchResults"></div>
-<p class="mut">BM25 code lives in this page and in the repo folder as <code>bm25.py</code> (Python, with <code>test_bm25.py</code>) and <code>bm25.js</code> (same formula, same tests in <code>bm25.test.js</code>, run with <code>node --test bm25.test.js</code>). One difference: JavaScript <code>/\w+/</code> matches ASCII word characters only, while Python <code>re</code> also matches Unicode letters; identical results for the ASCII text searched here. The guide's Angular steps (injecting HttpClient in <code>search.ts</code>) do not apply to this standalone page; the equivalent here is a real <code>fetch</code> GET with <code>?q=</code>, and the backend address belongs in the field above, not hard-coded.</p></div>
+<p class="mut">BM25 code lives in this page and in the repo folder as <code>bm25.py</code> (Python, with <code>test_bm25.py</code>) and <code>bm25.js</code> (same formula, same tests in <code>bm25.test.js</code>, run with <code>node --test bm25.test.js</code>). One difference: JavaScript <code>/\w+/</code> matches ASCII word characters only, while Python <code>re</code> also matches Unicode letters; identical results for the ASCII text searched here. The guide's Angular steps (injecting HttpClient in <code>search.ts</code>) do not apply to this standalone page; the equivalent here is a <code>fetch</code> GET with <code>?q=</code>, and the backend address belongs in the field above, not hard-coded.</p></div>
 
 <div class="card"><h2>Command reference — all 9 commands (from contracts/CLI-REFERENCE.md)</h2>
 <table><thead><tr><th>Command</th><th>Flags / arguments</th></tr></thead><tbody>
@@ -173,8 +173,7 @@ function routeFor(p){return state.endpoints.find(e=>e.size===(p==='drafting'?'sm
 function localHealth(e){
  if(e.url!=='webllm://local')return e.health;
  if(loadedModel===e.model)return 'healthy';
- if(loadedModel)return 'unhealthy'; // a different model is loaded, this one is not
- return 'unknown';
+ return 'unknown'; // no model loaded yet, or a different model is loaded; sending a request loads the matching one
 }
 async function probe(e){
  if(e.url==='webllm://local'){e.health=localHealth(e);e.probed=new Date().toLocaleTimeString();save();render();return;}
@@ -211,7 +210,7 @@ $('totalsBtn').onclick=showTotals;$('daysSel').onchange=showTotals;
 $('exportBtn').onclick=()=>{const b=new Blob([JSON.stringify(state.log,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='switchboard-usage.json';a.click();};
 $('clearBtn').onclick=()=>{if(confirm('Clear the local usage log?')){state.log=[];save();render();}};
 
-/* ---- real local model loading ---- */
+/* ---- local model loading ---- */
 if('gpu' in navigator){$('webgpuState').textContent='WebGPU is present in this browser.';}else{$('webgpuState').textContent='WebGPU not detected here — WebLLM will fail, Transformers.js will fall back to WebAssembly.';}
 $('engineSel').onchange=()=>{
  const k=$('engineSel').value;
@@ -239,8 +238,11 @@ async function loadOneEngine(kind){
   engineKind='transformers';loadedModel=$('modelSel').value;
  }else{
   const wl=await import('https://cdn.jsdelivr.net/npm/@wllama/wllama@3.13.0/+esm');
-  const base='https://cdn.jsdelivr.net/npm/@wllama/wllama@3.13.0/esm/';
-  wllamaInst=new wl.Wllama({'single-thread/wllama.wasm':base+'single-thread/wllama.wasm','multi-thread/wllama.wasm':base+'multi-thread/wllama.wasm'});
+  const wasmFromCdn=await import('https://cdn.jsdelivr.net/npm/@wllama/wllama@3.13.0/esm/wasm-from-cdn.js');
+  // wllama 3.13 ships one wasm file at esm/wasm/wllama.wasm; the documented
+  // way to point at it from a CDN is the wasm-from-cdn helper (the old
+  // single-thread/wllama.wasm and multi-thread/wllama.wasm paths are 404).
+  wllamaInst=new wl.Wllama(wasmFromCdn.default||wasmFromCdn);
   const file=$('ggufFile').files[0],url=$('ggufUrl').value.trim();
   const cb=p=>{if(p&&p.loaded!=null&&p.total){prog.value=p.loaded/p.total;$('loadMsg').textContent='Loading GGUF: '+Math.round(100*p.loaded/p.total)+'%';}};
   if(file){await wllamaInst.loadModel([file],{progressCallback:cb,n_ctx:2048});loadedModel='GGUF: '+file.name;}
@@ -254,18 +256,18 @@ async function loadModelWithFallback(preferredKind){
  modelLoading=true;modelLoadErrors=[];resetModelEngine();
  const prog=$('loadProg');prog.style.display='block';prog.value=0;
  $('loadModelBtn').disabled=true;$('loadModelBtn').textContent='Load local model';
- setModelState('LOADING REAL LOCAL MODEL…','unknown');
- // Preferred engine first, then the other real engines. GGUF is last and only
+ setModelState('LOADING LOCAL MODEL…','unknown');
+ // Preferred engine first, then the other engines. GGUF is last and only
  // attempted when a file or address is supplied — there is no invented default.
  const order=[preferredKind,'transformers','webllm','wllama'].filter((k,i,a)=>a.indexOf(k)===i);
  for(const kind of order){
   if(kind==='wllama'&&!$('ggufFile').files[0]&&!$('ggufUrl').value.trim()){modelLoadErrors.push('wllama: skipped — no GGUF file or address supplied.');continue;}
   $('engineSel').value=kind;$('ggufBox').style.display=kind==='wllama'?'block':'none';$('modelSel').style.display=kind==='wllama'?'none':'block';
-  $('loadMsg').textContent='Loading real local model… Trying '+kind+' ('+$('modelSel').value+') — this downloads the model weights on first run. Please wait.';
+  $('loadMsg').textContent='Loading local model… Trying '+kind+' ('+$('modelSel').value+') — this downloads the model weights on first run. Please wait.';
   try{
    await loadOneEngine(kind);
    setModelState('LOADED: '+loadedModel,'healthy');
-   $('loadMsg').textContent='Model loaded and ready: '+loadedModel+' ('+engineKind+'). Replies now come from this real model run.';
+   $('loadMsg').textContent='Model loaded and ready: '+loadedModel+' ('+engineKind+').';
    for(const e of state.endpoints)if(e.url==='webllm://local'){e.health=localHealth(e);e.probed=new Date().toLocaleTimeString();}
    save();render();modelLoading=false;
    $('loadModelBtn').disabled=false;prog.style.display='none';
@@ -273,11 +275,11 @@ async function loadModelWithFallback(preferredKind){
   }catch(err){
    resetModelEngine();
    modelLoadErrors.push(kind+': '+(err&&err.message?err.message:String(err)));
-   $('loadMsg').textContent='Loading real local model… '+kind+' failed ('+(err&&err.message?err.message:String(err))+'). Trying the next engine…';
+   $('loadMsg').textContent='Loading local model… '+kind+' failed ('+(err&&err.message?err.message:String(err))+'). Trying the next engine…';
   }
  }
  setModelState('LOAD FAILED — RETRY','unhealthy');
- $('loadMsg').textContent='Model failed to load after trying every engine. No reply will be invented. Real errors: '+modelLoadErrors.join(' | ');
+ $('loadMsg').textContent='Model failed to load after trying every engine. No reply will be invented. Errors: '+modelLoadErrors.join(' | ');
  $('loadModelBtn').textContent='Retry loading model';
  for(const e of state.endpoints)if(e.url==='webllm://local'){e.health=localHealth(e);}
  render();modelLoading=false;
@@ -310,11 +312,10 @@ function wordCount(s){return String(s||'').split(/\s+/).filter(Boolean).length;}
 async function runLocalModel(ep,body,onToken){
  const promptText=body.messages.map(m=>m.content).join('\n');
  if(engineKind==='webllm'){
-  const chunks=await engine.chat.completions.create({messages:body.messages,temperature:body.temperature!=null?body.temperature:0.7,max_tokens:512,stream:true});
+  const chunks=await engine.chat.completions.create({messages:body.messages,temperature:body.temperature!=null?body.temperature:0.7,max_tokens:512,stream:true,stream_options:{include_usage:true}});
   let text='',usage=null;
   for await(const c of chunks){const d=c.choices&&c.choices[0]&&c.choices[0].delta;if(d&&d.content){text+=d.content;onToken(text);}if(c.usage)usage=c.usage;}
-  const final=await engine.chat.completions.create({messages:body.messages,temperature:body.temperature!=null?body.temperature:0.7,max_tokens:1,stream:false}).catch(()=>null);
-  return{text,usage:usage||(final&&final.usage)||{prompt_tokens:wordCount(promptText),completion_tokens:wordCount(text),total_tokens:wordCount(promptText)+wordCount(text)},estimated:!usage};
+  return{text,usage:usage||{prompt_tokens:wordCount(promptText),completion_tokens:wordCount(text),total_tokens:wordCount(promptText)+wordCount(text)},estimated:!usage};
  }
  if(engineKind==='transformers'){
   const out=await transformerPipe(body.messages,{max_new_tokens:256,temperature:body.temperature!=null?body.temperature:0.7,do_sample:true});
@@ -324,9 +325,16 @@ async function runLocalModel(ep,body,onToken){
   onToken(text);
   return{text,usage:{prompt_tokens:wordCount(promptText),completion_tokens:wordCount(text),total_tokens:wordCount(promptText)+wordCount(text)},estimated:true};
  }
- // wllama
- const out=await wllamaInst.createChatCompletion(body.messages,{nPredict:256,temperature:body.temperature!=null?body.temperature:0.7,onNewToken:(tok,piece)=>{onToken((out&&out.text)||piece);}});
- const text=typeof out==='string'?out:(out&&out.text?out.text:String(out||''));
+ // wllama — accumulate streamed text in a local variable; the completion
+ // result is not assigned until the call returns, so the token callback
+ // must not read it (that threw a ReferenceError on the first token).
+ let text='';
+ const out=await wllamaInst.createChatCompletion(body.messages,{nPredict:256,temperature:body.temperature!=null?body.temperature:0.7,onNewToken:(tok,piece,currentText)=>{
+  if(typeof currentText==='string'){text=currentText;}
+  else if(piece){try{text+=new TextDecoder().decode(piece);}catch(e){}}
+  onToken(text);
+ }});
+ if(!text)text=typeof out==='string'?out:(out&&out.text?out.text:String(out||''));
  onToken(text);
  return{text,usage:{prompt_tokens:wordCount(promptText),completion_tokens:wordCount(text),total_tokens:wordCount(promptText)+wordCount(text)},estimated:true};
 }
@@ -338,14 +346,26 @@ async function sendReq(validateOnly){
  if(state.inflight>=100){$('reqMsg').textContent='HTTP 429: over 100 concurrent requests.';return;}
  const ep=routeFor(state.active);
  if(!ep){$('reqMsg').textContent='HTTP 503: no endpoint for profile '+state.active+'.';$('reqMsg').className='err';$('respOut').textContent='HTTP 503: no endpoint registered for profile '+state.active+'. Register a '+(state.active==='drafting'?'small':'large')+' endpoint first.';return;}
- if(ep.url==='webllm://local'&&modelLoading){$('reqMsg').textContent='Model still loading… Wait for the real local model in section 0 to finish loading, then send again. No reply will be invented while it loads.';$('reqMsg').className='err';$('respOut').textContent='Model still loading… Wait for the real local model in section 0 to finish loading, then send again.';return;}
+ if(ep.url==='webllm://local'&&engineKind==='wllama'){$('reqMsg').textContent='HTTP 503: a GGUF model is loaded through wllama, so the built-in endpoints cannot answer it. Pick the Transformers.js or WebLLM engine in section 0 and load the matching model.';$('reqMsg').className='err';$('respOut').textContent='HTTP 503: a GGUF model is loaded through wllama. The built-in endpoints need the Transformers.js or WebLLM engine with the matching model loaded.';return;}
+ if(ep.url==='webllm://local'){
+  // Load the model this endpoint needs, if none (or a different one) is loaded,
+  // so switching profile from drafting to review actually answers.
+  let waited=0;
+  while(modelLoading&&waited<120){await new Promise(r=>setTimeout(r,500));waited++;}
+  if(loadedModel!==ep.model){
+   $('modelSel').value=ep.model;
+   $('loadMsg').textContent='Switching to the model this endpoint needs ('+ep.model+')…';
+   const ok=await loadModelWithFallback($('engineSel').value);
+   if(!ok){$('reqMsg').textContent='HTTP 502: the model for endpoint '+ep.name+' could not be loaded. No reply was invented; no usage row written.';$('reqMsg').className='err';$('respOut').textContent='HTTP 502 Bad Gateway\nThe model for endpoint '+ep.name+' could not be loaded.\n'+modelLoadErrors.join('\n');return;}
+  }
+ }
+ if(ep.url==='webllm://local'&&modelLoading){$('reqMsg').textContent='Model still loading… Wait for the local model in section 0 to finish loading, then send again. No reply will be invented while it loads.';$('reqMsg').className='err';$('respOut').textContent='Model still loading… Wait for the local model in section 0 to finish loading, then send again.';return;}
  await probe(ep);
  if(ep.health!=='healthy'){$('reqMsg').textContent='HTTP 503: endpoint '+ep.name+' is not healthy — routing refused.';$('reqMsg').className='err';$('respOut').textContent='HTTP 503: endpoint '+ep.name+' is not healthy. '+(ep.url==='webllm://local'?'Wait for the local model in section 0 to finish loading, or press Retry loading model if it failed.':'Probe it in section 1.');return;}
  state.inflight++;const t0=performance.now();
  try{
   let data,usage,estimated=false;
   if(ep.url==='webllm://local'){
-   if(!loadedModel||loadedModel!==ep.model&&engineKind!=='wllama')throw new Error('The loaded model ('+(loadedModel||'none')+') does not match this endpoint model ('+ep.model+'). Load the matching model in section 0.');
    const r=await runLocalModel(ep,v.body,txt=>{$('respOut').textContent=txt;});
    usage=r.usage;estimated=!!r.estimated;
    data={id:'chatcmpl-local-'+Date.now(),object:'chat.completion',created:Math.floor(Date.now()/1000),model:ep.model,choices:[{index:0,message:{role:'assistant',content:r.text},finish_reason:'stop'}],usage:{prompt_tokens:usage.prompt_tokens,completion_tokens:usage.completion_tokens,total_tokens:usage.total_tokens}};
@@ -425,7 +445,7 @@ function bm25SelfTests(){
  return out;
 }
 
-/* ---- Search: BM25 ranking + real model summary, or a real live backend ---- */
+/* ---- Search: BM25 ranking + model summary, or a live backend ---- */
 /* SearchResult shape (from api-integration-guide.md):
  * { primaryContent, supportingMedia: [{id, label, type: 'image'|'video'|'placeholder'}],
  *   metadata: {source, timestamp, relevance} } */
@@ -462,7 +482,7 @@ async function runSearch(){
  try{
   let results;
   if(apiUrl){
-   // Real live search call (api-integration-guide.md step 3): no mock fallback.
+   // Live search call (api-integration-guide.md step 3).
    const resp=await fetch(apiUrl+(apiUrl.indexOf('?')>=0?'&':'?')+'q='+encodeURIComponent(q),{headers:{'Accept':'application/json'}});
    if(!resp.ok)throw new Error('Live search backend answered HTTP '+resp.status);
    const data=await resp.json();
@@ -480,22 +500,22 @@ async function runSearch(){
   }
   if(!results.length){$('searchResults').innerHTML='<p class="mut">No results. Nothing was invented to fill the gap.</p>';return;}
   $('searchResults').innerHTML=results.map((r,i)=>'<div class="card" style="margin:8px 0"><b>'+(i+1)+'. '+esc(r.primaryContent)+'</b><br><span class="mut">source: '+esc(r.metadata.source)+' · time: '+esc(r.metadata.timestamp)+' · relevance: '+r.metadata.relevance+' · media: '+(r.supportingMedia.length?r.supportingMedia.map(m=>esc(m.type)+': '+esc(m.label)).join(', '):'none')+'</span></div>').join('');
-  // Real model summary of the top BM25 result — only when a model is actually loaded.
+  // Model summary of the top BM25 result — only when a model is loaded.
   if(!apiUrl){
    if(loadedModel){
-    $('modelSummary').textContent='Asking the loaded real model ('+loadedModel+') to summarise the top result…';
+    $('modelSummary').textContent='Asking the loaded model ('+loadedModel+') to summarise the top result…';
     try{
      const r=await runLocalModel(null,{messages:[{role:'user',content:'In one plain sentence, say what this switchboard record is about: '+results[0].primaryContent}],temperature:0.2},()=>{});
-     $('modelSummary').textContent='Model summary of the top result (real inference, '+loadedModel+'): '+r.text;
-    }catch(e){$('modelSummary').textContent='Model summary failed — real error: '+e.message+'. The BM25 ranking above still stands on its own.';}
+     $('modelSummary').textContent='Model summary of the top result ('+loadedModel+'): '+r.text;
+    }catch(e){$('modelSummary').textContent='Model summary failed: '+e.message+'. The BM25 ranking above still stands on its own.';}
    }else if(modelLoading){
-    $('modelSummary').textContent='Model still loading… The BM25 ranking above stands on its own; a real model summary will appear once loading finishes.';
+    $('modelSummary').textContent='Model still loading… The BM25 ranking above stands on its own; a model summary will appear once loading finishes.';
    }else{
-    $('modelSummary').textContent='Model summary unavailable — the local model failed to load or was unloaded, so no summary is shown and a summary will never be invented. Press Retry loading model in section 0 to add a real model summary to the top result.';
+    $('modelSummary').textContent='Model summary unavailable — the local model failed to load or was unloaded, so no summary is shown and a summary will never be invented. Press Retry loading model in section 0 to add a model summary to the top result.';
    }
   }
  }catch(err){
-  $('searchMsg').textContent='Search failed — real error: '+err.message+'. No mock result was substituted.';
+  $('searchMsg').textContent='Search failed: '+err.message+'. Nothing was substituted.';
   $('searchResults').innerHTML='<p class="err">Live search failed: '+esc(err.message)+'</p>';
  }
 }
@@ -523,6 +543,8 @@ function cliHelp(cmd){
  const h={
  '': 'switchboard — Offline Local Model Switchboard CLI\nCommands: serve, endpoint add|list|remove, profile list|use|show, usage, status\nRun "switchboard <command> --help" for one command.',
  'serve':'switchboard serve — start the gateway.\nFlags: --listen (default 127.0.0.1:8080), --config (path), --profile (profile at startup)',
+ 'endpoint':'switchboard endpoint — manage registered endpoints.\nCommands: endpoint add, endpoint list, endpoint remove\nRun "switchboard endpoint <command> --help" for one command.',
+ 'profile':'switchboard profile — manage routing profiles.\nCommands: profile list, profile use NAME, profile show\nRun "switchboard profile <command> --help" for one command.',
  'endpoint add':'switchboard endpoint add — register an endpoint.\nRequired: --name, --url, --model. Optional: --timeout-seconds (default 30)',
  'endpoint list':'switchboard endpoint list — show registered endpoints with health. No flags.',
  'endpoint remove':'switchboard endpoint remove NAME — delete one endpoint by name.',
@@ -544,9 +566,9 @@ $('cliRun').onclick=()=>{
  else{
   const cmd=clean[1];
   const rest=clean.slice(2);
-  const sub=(cmd==='endpoint'||cmd==='profile')?(rest[0]||''):'';
+  const sub=(cmd==='endpoint'||cmd==='profile')?((rest[0]||'').startsWith('--')?'':rest[0]||''):'';
   const key=cmd+(sub?' '+sub:'');
-  const {flags,pos}=parseFlags(cmd==='endpoint'||cmd==='profile'?rest.slice(1):rest);
+  const {flags,pos}=parseFlags((cmd==='endpoint'||cmd==='profile')?(sub?rest.slice(1):rest):rest);
   if(flags.help){out.push(cliHelp(key));}
   else if(cmd==='serve'){
    if(flags.listen&&!/^(\d+\.\d+\.\d+\.\d+|localhost):\d{1,5}$/.test(String(flags.listen))){out.push('Exit 3: invalid listen address: '+flags.listen);code=3;}

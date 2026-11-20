@@ -4,6 +4,12 @@ A command-line tool that starts a self-hosted gateway on a laptop or on-premises
 
 Built from the starred repo **QuantumNous/new-api** — new-api's self-hosted Go gateway, its single OpenAI-compatible API surface, and its model routing and local usage tracking
 
+## What ships in this repo
+
+The shipped artifact is `switchboard-control-panel.html`, a single-file control panel that runs the switchboard logic in the browser: endpoint registration with health probes, drafting/review routing profiles, OpenAI-compatible request validation and routing, a local usage log with token totals, a simulator for all 9 commands in `contracts/CLI-REFERENCE.md`, and BM25 search over endpoints and log rows. The built-in endpoints answer from a model loaded in the browser tab (Transformers.js, WebLLM, or a GGUF file through wllama); the model weights download from the CDN on first open and are cached by the browser after that. Any other endpoint must be a local model server address that answers `POST /v1/chat/completions`. If no model is loaded and no server answers, the panel reports the failure and does not invent a reply.
+
+The Go command-line binary described in `PROJECT-SPEC.yaml` and the phase files is not implemented in this repo yet: there is no Go code here, only the spec and the panel above, which mirrors the CLI's command contract. The panel is the working artifact; the Go binary remains future work.
+
 ## Why this package exists
 
 Long agentic coding sessions drift: an assistant asked to build the whole thing at once invents APIs, skips tests, or quietly swaps in mock data. For this project the sharpest drift risk is invented flags and exit codes: a command surface guessed mid-build breaks every script written against it. The package pins the command contract in one spec before any command is implemented. This package counters that with one spec of record (`PROJECT-SPEC.yaml`), global rules the coding agent loads once (`AGENTS.md`, `guardrails/GLOBAL-PROTOCOL.md`), and eight sequentially gated phases, each with a test requirement and pass/fail criteria a human verifies before the next phase starts.
@@ -74,6 +80,12 @@ offline-local-model-switchboard-cli/PROJECT-SPEC.yaml
 offline-local-model-switchboard-cli/README.md
 offline-local-model-switchboard-cli/AGENTS.md
 offline-local-model-switchboard-cli/ARCHITECTURE.md
+offline-local-model-switchboard-cli/switchboard-control-panel.html
+offline-local-model-switchboard-cli/bm25.py
+offline-local-model-switchboard-cli/bm25.js
+offline-local-model-switchboard-cli/bm25.test.js
+offline-local-model-switchboard-cli/test_bm25.py
+offline-local-model-switchboard-cli/tests/panel-smoke.test.js
 offline-local-model-switchboard-cli/guardrails/GLOBAL-PROTOCOL.md
 offline-local-model-switchboard-cli/tests-plan/TDD-STRATEGY.md
 offline-local-model-switchboard-cli/contracts/CLI-REFERENCE.md
